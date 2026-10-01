@@ -1,0 +1,25 @@
+{
+  "name": "knot-desktop",
+  "version": "1.0.0",
+  "description": "KNOT is a lightweight, real-time desktop messaging application inspired by modern messaging platforms.",
+  "main": "electron/main.js",
+  "scripts": {
+    "client": "npm run dev --prefix client",
+    "electron": "electron ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arpitchhimpa60/KNOT-Desktop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/arpitchhimpa60/KNOT-Desktop/issues"
+  },
+  "homepage": "https://github.com/arpitchhimpa60/KNOT-Desktop#readme",
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
