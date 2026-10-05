@@ -1,5 +1,6 @@
 const User = require("../models/user");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const signup = async (req, res) => {
   try {
@@ -62,7 +63,7 @@ const login = async (req, res) => {
       });
     }
 
-    // 2. Find user
+    // 2. Find user FIRST
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -83,9 +84,21 @@ const login = async (req, res) => {
       });
     }
 
-    // 4. Login successful
+    // 4. NOW create JWT
+    const token = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    // 5. Send response
     res.status(200).json({
       message: "Login successful",
+      token,
       user: {
         id: user._id,
         username: user.username,
@@ -101,7 +114,30 @@ const login = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      user,
+    });
+  } catch (error) {
+    console.error("Get user error:", error.message);
+
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   signup,
-  login
+  login,
+  getMe,
 };
