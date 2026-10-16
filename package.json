@@ -21,5 +21,9 @@
   "homepage": "https://github.com/arpitchhimpa60/KNOT-Desktop#readme",
   "devDependencies": {
     "electron": "^44.5.1"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "jsonwebtoken": "^9.0.3"
   }
 }
