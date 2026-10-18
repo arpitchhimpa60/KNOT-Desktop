@@ -2,18 +2,17 @@ const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+
 const signup = async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // 1. Check required fields
     if (!username || !email || !password) {
       return res.status(400).json({
         message: "All fields are required",
       });
     }
 
-    // 2. Check whether user already exists
     const existingUser = await User.findOne({
       $or: [{ username }, { email }],
     });
@@ -24,19 +23,29 @@ const signup = async (req, res) => {
       });
     }
 
-    // 3. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4. Create user
     const user = await User.create({
       username,
       email,
       password: hashedPassword,
     });
 
-    // 5. Send response
-    res.status(201).json({
+    // Generate a JWT, just like the login controller.
+    const token = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    // Return both the token and the new user's details.
+    return res.status(201).json({
       message: "User created successfully",
+      token,
       user: {
         id: user._id,
         username: user.username,
@@ -46,11 +55,12 @@ const signup = async (req, res) => {
   } catch (error) {
     console.error("Signup error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
 };
+
 
 const login = async (req, res) => {
   try {

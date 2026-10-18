@@ -11,7 +11,12 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const socketAuth = require("./middleware/socketAuth");
-const { setIO } = require("./socket");
+const {
+  setIO,
+  addOnlineUser,
+  removeOnlineUser,
+  getOnlineUserIds,
+} = require("./socket");
 
 const app = express();
 
@@ -41,16 +46,24 @@ const io = new Server(server, {
 setIO(io);
 io.use(socketAuth);
 
+
 io.on("connection", (socket) => {
-  const userId = socket.userId;
+  const userId = String(socket.userId);
 
   socket.join(userId);
+  addOnlineUser(userId);
+
+  // Send the current online list to this newly connected client.
+  socket.emit("online-users", getOnlineUserIds());
+
   console.log(`User ${userId} connected`);
 
   socket.on("disconnect", () => {
+    removeOnlineUser(userId);
     console.log(`User ${userId} disconnected`);
   });
 });
+
 
 server.listen(PORT, () => {
   console.log(`KNOT server running on port ${PORT}`);
