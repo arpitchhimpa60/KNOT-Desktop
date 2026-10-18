@@ -11,6 +11,8 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const socketAuth = require("./middleware/socketAuth");
+const Message = require("./models/Messages");
+
 const {
   setIO,
   addOnlineUser,
@@ -51,12 +53,44 @@ io.on("connection", (socket) => {
   const userId = String(socket.userId);
 
   socket.join(userId);
+  async function deliverPendingMessages() {
+  try {
+    const pendingMessages = await Message.find({
+      recipient: userId,
+      status: "sent",
+    });
+
+    for (const message of pendingMessages) {
+      message.status = "delivered";
+      await message.save();
+
+      io.to(String(message.sender)).emit("message-status", {
+        messageId: String(message._id),
+        status: "delivered",
+      });
+    }
+  } catch (error) {
+    console.error("Pending delivery sync failed:", error);
+  }
+}
+
+deliverPendingMessages();
   addOnlineUser(userId);
 
   // Send the current online list to this newly connected client.
   socket.emit("online-users", getOnlineUserIds());
 
   console.log(`User ${userId} connected`);
+
+  socket.on("typing", ({ recipientId, isTyping }) => {
+  if (!recipientId || recipientId === userId) return;
+
+  // Notify the intended recipient.
+  io.to(String(recipientId)).emit("typing-update", {
+    userId,
+    isTyping: Boolean(isTyping),
+  });
+  });
 
   socket.on("disconnect", () => {
     removeOnlineUser(userId);

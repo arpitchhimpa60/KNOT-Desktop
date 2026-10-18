@@ -466,3 +466,32 @@
   color: #55d6a5;
   font-size: 13px;
 }
+
+
+.typing-indicator {
+  margin: 6px 16px;
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+
+.message-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.message-status {
+  font-size: 13px;
+  letter-spacing: -3px;
+  padding-right: 3px;
+}
+
+.message-status.read {
+  color: #60a5fa;
+}

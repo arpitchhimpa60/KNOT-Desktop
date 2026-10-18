@@ -112,3 +112,43 @@ export async function sendChatMessage(token, recipientId, text) {
 
   return data.data;
 }
+
+
+export async function markMessageDelivered(token, messageId) {
+  const response = await fetch(
+    `${API_URL}/messages/${messageId}/delivered`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Could not update delivery status");
+  }
+
+  return data.data;
+}
+
+export async function markMessagesRead(token, senderId, messageIds) {
+  const response = await fetch(`${API_URL}/messages/read`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ senderId, messageIds }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Could not mark messages as read");
+  }
+
+  return data;
+}

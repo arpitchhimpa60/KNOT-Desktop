@@ -5,7 +5,7 @@ import { io } from "socket.io-client";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
-import { getCurrentUser } from "./api";
+import { getCurrentUser,markMessageDelivered } from "./api";
 import "./App.css";
 
 function App() {
@@ -90,9 +90,18 @@ function App() {
       });
     });
 
+    newSocket.on("new-message", handleDeliveryAcknowledgement);
+    async function handleDeliveryAcknowledgement(message) {
+      try {
+        await markMessageDelivered(token, message._id);
+      } catch (error) {
+        console.error("Delivery acknowledgement failed:", error);
+      }
+    }
     return () => {
       newSocket.off("online-users");
       newSocket.off("presence-update");
+      newSocket.off("new-message", handleDeliveryAcknowledgement);
       newSocket.disconnect();
 
       setSocket((currentSocket) =>

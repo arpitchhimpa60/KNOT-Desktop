@@ -1,11 +1,14 @@
+
+const mongoose = require("mongoose");
 const User = require("../models/user");
 const Message = require("../models/Messages");
 const { getIO } = require("../socket");
 
+// POST /api/messages
 const sendMessage = async (req, res) => {
   try {
-    const { recipientId, text } = req.body;
     const senderId = req.user.userId;
+    const { recipientId, text } = req.body;
 
     if (!recipientId || !text?.trim()) {
       return res.status(400).json({
@@ -13,7 +16,13 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    if (senderId === recipientId) {
+    if (!mongoose.isValidObjectId(recipientId)) {
+      return res.status(400).json({
+        message: "Invalid recipient ID",
+      });
+    }
+
+    if (String(senderId) === String(recipientId)) {
       return res.status(400).json({
         message: "You cannot send a message to yourself",
       });
@@ -31,73 +40,166 @@ const sendMessage = async (req, res) => {
       sender: senderId,
       recipient: recipientId,
       text: text.trim(),
+      status: "sent",
     });
 
-    const io = getIO();
-    io.to(recipientId).emit("new-message", message);
-    
+    // Notify the recipient in real time.
+    getIO().to(String(recipientId)).emit("new-message", message);
+
     return res.status(201).json({
       message: "Message sent successfully",
       data: message,
     });
   } catch (error) {
-    console.error("Send message error:", error.message);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "Invalid recipient ID",
-      });
-    }
+    console.error("Send message error:", error);
 
     return res.status(500).json({
-      message: "Server error",
+      message: "Could not send message",
     });
   }
 };
 
+// GET /api/messages/:userId
 const getChatHistory = async (req, res) => {
   try {
-    const { userId } = req.params;
-    const currentUserId = req.user.userId;
+    const myId = req.user.userId;
+    const otherUserId = req.params.userId;
 
-    if (currentUserId === userId) {
-      return res.status(400).json({
-        message: "Cannot retrieve a chat with yourself",
-      });
-    }
-
-    const otherUser = await User.findById(userId);
-
-    if (!otherUser) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    const messages = await Message.find({
-      $or: [
-        { sender: currentUserId, recipient: userId },
-        { sender: userId, recipient: currentUserId },
-      ],
-    })
-      .sort({ createdAt: 1 })
-      .limit(100);
-
-    res.status(200).json({
-      count: messages.length,
-      messages,
-    });
-  } catch (error) {
-    console.error("Get chat history error:", error.message);
-
-    if (error.name === "CastError") {
+    if (!mongoose.isValidObjectId(otherUserId)) {
       return res.status(400).json({
         message: "Invalid user ID",
       });
     }
 
-    res.status(500).json({
-      message: "Server error",
+    const messages = await Message.find({
+      $or: [
+        { sender: myId, recipient: otherUserId },
+        { sender: otherUserId, recipient: myId },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .limit(100);
+
+    return res.status(200).json({
+      count: messages.length,
+      messages,
+    });
+  } catch (error) {
+    console.error("Get chat history error:", error);
+
+    return res.status(500).json({
+      message: "Could not load messages",
+    });
+  }
+};
+
+// PATCH /api/messages/:messageId/delivered
+const markMessageDelivered = async (req, res) => {
+  try {
+    const recipientId = req.user.userId;
+    const { messageId } = req.params;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(400).json({
+        message: "Invalid message ID",
+      });
+    }
+
+    const message = await Message.findOneAndUpdate(
+      {
+        _id: messageId,
+        recipient: recipientId,
+        status: "sent",
+      },
+      {
+        $set: { status: "delivered" },
+      },
+      { new: true }
+    );
+
+    // If it was already delivered/read, do not downgrade its status.
+    if (!message) {
+      const existingMessage = await Message.findOne({
+        _id: messageId,
+        recipient: recipientId,
+      });
+
+      if (!existingMessage) {
+        return res.status(404).json({
+          message: "Message not found",
+        });
+      }
+
+      return res.status(200).json({
+        message: "Message already acknowledged",
+        data: existingMessage,
+      });
+    }
+
+    getIO().to(String(message.sender)).emit("message-status", {
+      messageId: String(message._id),
+      status: message.status,
+    });
+
+    return res.status(200).json({
+      message: "Message marked as delivered",
+      data: message,
+    });
+  } catch (error) {
+    console.error("Mark delivered error:", error);
+
+    return res.status(500).json({
+      message: "Could not update message status",
+    });
+  }
+};
+
+// PATCH /api/messages/read
+const markMessagesRead = async (req, res) => {
+  try {
+    const recipientId = req.user.userId;
+    const { senderId, messageIds } = req.body;
+
+    if (
+      !mongoose.isValidObjectId(senderId) ||
+      !Array.isArray(messageIds) ||
+      messageIds.length === 0 ||
+      !messageIds.every((id) => mongoose.isValidObjectId(id))
+    ) {
+      return res.status(400).json({
+        message: "A valid sender ID and message IDs are required",
+      });
+    }
+
+    const result = await Message.updateMany(
+      {
+        _id: { $in: messageIds },
+        sender: senderId,
+        recipient: recipientId,
+        status: { $in: ["sent", "delivered"] },
+      },
+      {
+        $set: { status: "read" },
+      }
+    );
+
+    // Notify the sender so their message bubbles update.
+    if (result.modifiedCount > 0) {
+      getIO().to(String(senderId)).emit("messages-read", {
+        messageIds: messageIds.map(String),
+        readerId: String(recipientId),
+      });
+    }
+
+    return res.status(200).json({
+      message: "Messages marked as read",
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Mark read error:", error);
+
+    return res.status(500).json({
+      message: "Could not mark messages as read",
     });
   }
 };
@@ -105,4 +207,6 @@ const getChatHistory = async (req, res) => {
 module.exports = {
   sendMessage,
   getChatHistory,
+  markMessageDelivered,
+  markMessagesRead,
 };
