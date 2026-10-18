@@ -12,8 +12,9 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [typingUserId, setTypingUserId] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
 
-  // Load chat history when the selected user changes.
+  // Load conversation history.
   useEffect(() => {
     let cancelled = false;
 
@@ -26,6 +27,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
       }
 
       setMessages([]);
+      setReplyingTo(null);
       setError("");
       setLoading(true);
 
@@ -53,7 +55,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     };
   }, [selectedUser?._id, token]);
 
-  // Listen for messages in the currently open conversation.
+  // Listen for new messages in the open conversation.
   useEffect(() => {
     if (!socket || !selectedUser?._id || !currentUser?._id) {
       return;
@@ -75,11 +77,11 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
       if (!belongsToOpenChat) return;
 
       setMessages((previous) => {
-        const alreadyExists = previous.some(
+        const exists = previous.some(
           (item) => String(item._id) === String(message._id)
         );
 
-        return alreadyExists ? previous : [...previous, message];
+        return exists ? previous : [...previous, message];
       });
     }
 
@@ -90,7 +92,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     };
   }, [socket, selectedUser?._id, currentUser?._id]);
 
-  // Update message statuses received from the server.
+  // Listen for delivery and read status updates.
   useEffect(() => {
     if (!socket) return;
 
@@ -125,7 +127,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     };
   }, [socket]);
 
-  // Mark incoming messages as read when their conversation is open.
+  // Mark incoming messages as read in the open conversation.
   useEffect(() => {
     if (
       !socket ||
@@ -193,20 +195,16 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     messages,
   ]);
 
-  // Listen for typing events from the selected user.
+  // Listen for typing events.
   useEffect(() => {
     setTypingUserId(null);
 
-    if (!socket || !selectedUser?._id) {
-      return;
-    }
+    if (!socket || !selectedUser?._id) return;
 
     function handleTypingUpdate({ userId, isTyping }) {
-      const typingId = String(userId);
+      if (String(userId) !== String(selectedUser._id)) return;
 
-      if (typingId !== String(selectedUser._id)) return;
-
-      setTypingUserId(isTyping ? typingId : null);
+      setTypingUserId(isTyping ? String(userId) : null);
     }
 
     socket.on("typing-update", handleTypingUpdate);
@@ -216,8 +214,8 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     };
   }, [socket, selectedUser?._id]);
 
-  // Send a message through the REST API.
-  async function handleSend(text) {
+  // Send a new message, optionally referencing another message.
+  async function handleSend(text, replyToId) {
     if (!selectedUser?._id) {
       throw new Error("Select a user first.");
     }
@@ -225,18 +223,19 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     const savedMessage = await sendChatMessage(
       token,
       selectedUser._id,
-      text
+      text,
+      replyToId || null
     );
 
     setMessages((previous) => {
-      const alreadyExists = previous.some(
+      const exists = previous.some(
         (item) => String(item._id) === String(savedMessage._id)
       );
 
-      return alreadyExists
-        ? previous
-        : [...previous, savedMessage];
+      return exists ? previous : [...previous, savedMessage];
     });
+
+    setReplyingTo(null);
   }
 
   if (!selectedUser) {
@@ -284,12 +283,45 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
           const mine = senderId === String(currentUser?._id);
           const status = message.status || "sent";
 
+          const replyId = message.replyTo?._id ?? message.replyTo;
+          const originalMessage = replyId
+            ? messages.find(
+                (item) => String(item._id) === String(replyId)
+              )
+            : null;
+
+          const originalSenderId = originalMessage
+            ? String(
+                originalMessage.sender?._id ?? originalMessage.sender
+              )
+            : null;
+
+          const originalSenderName =
+            originalSenderId === String(currentUser?._id)
+              ? "You"
+              : selectedUser.username;
+
           return (
             <div
               key={message._id}
               className={`message-row ${mine ? "mine" : ""}`}
             >
               <div className="message-bubble">
+                {replyId && (
+                  <div className="reply-quote">
+                    <strong>
+                      {originalMessage
+                        ? originalSenderName
+                        : "Original message"}
+                    </strong>
+                    <p>
+                      {originalMessage
+                        ? originalMessage.text
+                        : "Message preview unavailable"}
+                    </p>
+                  </div>
+                )}
+
                 <p>{message.text}</p>
 
                 <div className="message-meta">
@@ -317,6 +349,14 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
                     </span>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  className="reply-button"
+                  onClick={() => setReplyingTo(message)}
+                >
+                  ↩ Reply
+                </button>
               </div>
             </div>
           );
@@ -333,6 +373,8 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
         recipientId={selectedUser._id}
         onMessageSent={handleSend}
         socket={socket}
+        replyTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
       />
     </main>
   );

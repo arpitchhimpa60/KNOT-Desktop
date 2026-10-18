@@ -1,7 +1,13 @@
 
 import { useState } from "react";
 
-function MessageInput({ recipientId, onMessageSent, socket }) {
+function MessageInput({
+  recipientId,
+  onMessageSent,
+  socket,
+  replyTo,
+  onCancelReply,
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -25,16 +31,13 @@ function MessageInput({ recipientId, onMessageSent, socket }) {
 
     const trimmedText = text.trim();
 
-    if (!trimmedText || !recipientId || sending) {
-      return;
-    }
+    if (!trimmedText || !recipientId || sending) return;
 
     setSending(true);
     setError("");
 
     try {
-      await onMessageSent(trimmedText);
-
+      await onMessageSent(trimmedText, replyTo?._id ?? null);
       setText("");
 
       if (socket) {
@@ -50,8 +53,37 @@ function MessageInput({ recipientId, onMessageSent, socket }) {
     }
   }
 
+  const replySenderId = replyTo
+    ? String(replyTo.sender?._id ?? replyTo.sender)
+    : null;
+
+  const replySenderName =
+    replySenderId &&
+    replySenderId === String(replyTo?.currentUserId)
+      ? "You"
+      : "Selected message";
+
   return (
     <div>
+      {replyTo && (
+        <div className="reply-composer">
+          <div className="reply-composer-content">
+            <strong>Replying to {replySenderName}</strong>
+            <p>{replyTo.text}</p>
+          </div>
+
+          <button
+            type="button"
+            className="cancel-reply-button"
+            onClick={onCancelReply}
+            aria-label="Cancel reply"
+            title="Cancel reply"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {error && <p className="search-error">{error}</p>}
 
       <form className="message-composer" onSubmit={handleSubmit}>

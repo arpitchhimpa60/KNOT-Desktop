@@ -5,10 +5,11 @@ const Message = require("../models/Messages");
 const { getIO } = require("../socket");
 
 // POST /api/messages
+
 const sendMessage = async (req, res) => {
   try {
     const senderId = req.user.userId;
-    const { recipientId, text } = req.body;
+    const { recipientId, text, replyTo } = req.body;
 
     if (!recipientId || !text?.trim()) {
       return res.status(400).json({
@@ -36,15 +37,46 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    const message = await Message.create({
+    let originalMessage = null;
+
+    if (replyTo) {
+      if (!mongoose.isValidObjectId(replyTo)) {
+        return res.status(400).json({
+          message: "Invalid reply message ID",
+        });
+      }
+
+      originalMessage = await Message.findOne({
+        _id: replyTo,
+        $or: [
+          { sender: senderId, recipient: recipientId },
+          { sender: recipientId, recipient: senderId },
+        ],
+      });
+
+      if (!originalMessage) {
+        return res.status(404).json({
+          message: "Original message not found in this conversation",
+        });
+      }
+    }
+
+    const messageData = {
       sender: senderId,
       recipient: recipientId,
       text: text.trim(),
       status: "sent",
-    });
+    };
 
-    // Notify the recipient in real time.
-    getIO().to(String(recipientId)).emit("new-message", message);
+    if (originalMessage) {
+      messageData.replyTo = originalMessage._id;
+    }
+
+    const message = await Message.create(messageData);
+
+    const io = getIO();
+
+    io.to(String(recipientId)).emit("new-message", message);
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -58,6 +90,7 @@ const sendMessage = async (req, res) => {
     });
   }
 };
+
 
 // GET /api/messages/:userId
 const getChatHistory = async (req, res) => {

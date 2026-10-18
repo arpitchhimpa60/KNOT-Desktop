@@ -94,24 +94,37 @@ export async function getChatHistory(token, userId) {
   return data.messages;
 }
 
-export async function sendChatMessage(token, recipientId, text) {
+
+
+export async function sendChatMessage(
+  token,
+  recipientId,
+  text,
+  replyTo = null
+) {
   const response = await fetch(`${API_URL}/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ recipientId, text }),
+    body: JSON.stringify({
+      recipientId,
+      text,
+      ...(replyTo ? { replyTo } : {}),
+    }),
   });
 
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || "Failed to send message");
+    throw new Error(data.message || "Could not send message");
   }
 
   return data.data;
 }
+
+
 
 
 export async function markMessageDelivered(token, messageId) {
