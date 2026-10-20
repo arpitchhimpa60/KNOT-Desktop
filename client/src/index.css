@@ -3,8 +3,8 @@
 
 :root {
   font-family: "DM Sans", sans-serif;
-  color: #e9edf5;
-  background: #0d1017;
+  color: var(--text-main, #e9edf5);
+  background: var(--bg-app, #0c1317);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

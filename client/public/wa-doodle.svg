@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" fill="none">
+  <g stroke="#ffffff" stroke-opacity="0.045" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Chat bubble top left -->
+    <path d="M40 30 C30 30 22 38 22 48 C22 55 26 61 32 64 L30 74 L42 66 C44 66 47 66 50 66 C60 66 68 58 68 48 C68 38 60 30 50 30 Z" />
+    <circle cx="36" cy="48" r="1.5" fill="#ffffff" fill-opacity="0.045" />
+    <circle cx="45" cy="48" r="1.5" fill="#ffffff" fill-opacity="0.045" />
+    <circle cx="54" cy="48" r="1.5" fill="#ffffff" fill-opacity="0.045" />
+
+    <!-- Coffee cup -->
+    <path d="M120 40 L150 40 L146 65 C145 68 142 70 138 70 L132 70 C128 70 125 68 124 65 Z" />
+    <path d="M150 45 C155 45 158 48 158 53 C158 58 155 60 148 60" />
+    <path d="M130 32 C130 35 133 36 133 38" />
+    <path d="M140 30 C140 34 143 35 143 38" />
+
+    <!-- Music note -->
+    <path d="M220 50 L220 30 L245 24 L245 44" />
+    <ellipse cx="214" cy="52" rx="6" ry="4" transform="rotate(-20 214 52)" />
+    <ellipse cx="239" cy="46" rx="6" ry="4" transform="rotate(-20 239 46)" />
+
+    <!-- Clock -->
+    <circle cx="310" cy="45" r="16" />
+    <path d="M310 35 L310 45 L318 49" />
+    <path d="M302 24 L306 27" />
+    <path d="M318 27 L322 24" />
+
+    <!-- Headphones -->
+    <path d="M45 140 C45 120 60 110 75 110 C90 110 105 120 105 140" />
+    <rect x="40" y="136" width="10" height="18" rx="4" />
+    <rect x="100" y="136" width="10" height="18" rx="4" />
+
+    <!-- Heart -->
+    <path d="M180 130 C180 120 168 112 160 122 C152 112 140 120 140 130 C140 142 160 156 160 156 C160 156 180 142 180 130 Z" />
+
+    <!-- Gamepad -->
+    <rect x="235" y="125" width="46" height="26" rx="8" />
+    <path d="M246 133 L246 143 M241 138 L251 138" />
+    <circle cx="266" cy="135" r="2" />
+    <circle cx="272" cy="141" r="2" />
+
+    <!-- Star -->
+    <path d="M325 125 L328 133 L336 134 L330 140 L332 148 L325 144 L318 148 L320 140 L314 134 L322 133 Z" />
+
+    <!-- Camera -->
+    <rect x="35" y="215" width="40" height="28" rx="6" />
+    <path d="M47 215 L50 208 L60 208 L63 215 Z" />
+    <circle cx="55" cy="229" r="8" />
+    <circle cx="68" cy="221" r="1.5" />
+
+    <!-- Speech balloon rounded -->
+    <path d="M135 210 C120 210 110 220 110 232 C110 240 115 246 122 250 L118 260 L130 254 C132 254 133 254 135 254 C150 254 160 244 160 232 C160 220 150 210 135 210 Z" />
+
+    <!-- Paper plane / rocket -->
+    <path d="M225 215 L260 230 L225 245 L232 230 Z" />
+    <path d="M232 230 L250 230" />
+
+    <!-- Sun / flower -->
+    <circle cx="315" cy="225" r="9" />
+    <path d="M315 210 L315 213 M315 237 L315 240 M300 225 L303 225 M327 225 L330 225 M304 214 L307 217 M323 233 L326 236 M304 236 L307 233 M323 217 L326 214" />
+
+    <!-- Message checkmark badge -->
+    <circle cx="60" cy="315" r="14" />
+    <path d="M53 315 L58 320 L68 310" />
+
+    <!-- Bell / notification -->
+    <path d="M140 320 C140 310 144 304 150 304 C156 304 160 310 160 320 L164 324 L136 324 Z" />
+    <circle cx="150" cy="328" r="2.5" />
+
+    <!-- Compass / globe -->
+    <circle cx="235" cy="315" r="15" />
+    <path d="M220 315 C225 310 245 310 250 315 C245 320 225 320 220 315 Z" />
+    <ellipse cx="235" cy="315" rx="7" ry="15" />
+
+    <!-- Smiley face -->
+    <circle cx="320" cy="315" r="14" />
+    <circle cx="315" cy="311" r="1.5" fill="#ffffff" fill-opacity="0.045" />
+    <circle cx="325" cy="311" r="1.5" fill="#ffffff" fill-opacity="0.045" />
+    <path d="M314 319 C316 323 324 323 326 319" />
+  </g>
+</svg>

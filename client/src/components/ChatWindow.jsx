@@ -1,18 +1,91 @@
 
 import { useEffect, useState } from "react";
 import MessageInput from "./MessageInput";
+import ImagePreviewModal from "./ImagePreviewModal";
 import {
   getChatHistory,
   sendChatMessage,
+  uploadChatMessage,
+  downloadMessageAttachment,
+  getAttachmentViewUrl,
   markMessagesRead,
+  editChatMessage,
+  deleteChatMessage,
+  acceptConversation,
+  getAvatarUrl,
 } from "../api";
 
-function ChatWindow({ selectedUser, currentUser, token, socket }) {
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function isImageMimeOrExt(mimeType, fileName) {
+  if (mimeType && mimeType.startsWith("image/")) return true;
+  const ext = (fileName || "").toLowerCase().split(".").pop();
+  return ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
+}
+
+function getFileBadgeText(fileName) {
+  const ext = (fileName || "").toLowerCase().split(".").pop();
+  if (["pdf"].includes(ext)) return "PDF";
+  if (["doc", "docx"].includes(ext)) return "DOC";
+  if (["xls", "xlsx", "csv"].includes(ext)) return "SHEET";
+  if (["zip", "tar", "gz", "7z"].includes(ext)) return "ZIP";
+  if (["txt", "md", "json", "log"].includes(ext)) return "TXT";
+  return (ext || "FILE").toUpperCase().slice(0, 4);
+}
+
+function ChatWindow({
+  selectedUser,
+  currentUser,
+  token,
+  socket,
+  isRequest = false,
+  onConversationUpdated,
+  onlineUserIds = [],
+  onOpenContactInfo,
+}) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [typingUserId, setTypingUserId] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
+
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [acceptingRequest, setAcceptingRequest] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+
+  function handleOpenImagePreview(message) {
+    const src = getAttachmentViewUrl(token, message._id);
+    setPreviewImage({
+      src,
+      alt: message.attachment.originalName || "Attached image",
+      fileName: message.attachment.originalName || "image",
+      fileSize: formatFileSize(message.attachment.fileSize),
+      messageId: message._id,
+    });
+  }
+
+  async function handleDownload(messageId, originalName) {
+    if (downloadingId) return;
+    setDownloadingId(messageId);
+    try {
+      await downloadMessageAttachment(token, messageId, originalName);
+    } catch (err) {
+      console.error("Failed to download attachment:", err);
+      setActionError(err.message || "Could not download file.");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   // Load conversation history.
   useEffect(() => {
@@ -28,6 +101,9 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
 
       setMessages([]);
       setReplyingTo(null);
+      setEditingMessageId(null);
+      setEditText("");
+      setActionError("");
       setError("");
       setLoading(true);
 
@@ -57,9 +133,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
 
   // Listen for new messages in the open conversation.
   useEffect(() => {
-    if (!socket || !selectedUser?._id || !currentUser?._id) {
-      return;
-    }
+    if (!socket || !selectedUser?._id || !currentUser?._id) return;
 
     function handleNewMessage(message) {
       const senderId = String(message.sender?._id ?? message.sender);
@@ -107,7 +181,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     }
 
     function handleMessagesRead({ messageIds }) {
-      const readIds = new Set(messageIds.map(String));
+      const readIds = new Set((messageIds || []).map(String));
 
       setMessages((previous) =>
         previous.map((message) =>
@@ -176,6 +250,10 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
               : message
           )
         );
+
+        if (onConversationUpdated) {
+          onConversationUpdated();
+        }
       } catch (err) {
         console.error("Read acknowledgement failed:", err);
       }
@@ -193,6 +271,7 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     token,
     loading,
     messages,
+    onConversationUpdated,
   ]);
 
   // Listen for typing events.
@@ -214,18 +293,73 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     };
   }, [socket, selectedUser?._id]);
 
-  // Send a new message, optionally referencing another message.
-  async function handleSend(text, replyToId) {
+  // Listen for edits and deletions from either user.
+  useEffect(() => {
+    if (!socket) return;
+
+    function handleMessageEdited(update) {
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(update.messageId)
+            ? {
+                ...message,
+                text: update.text,
+                isEdited: true,
+                updatedAt: update.updatedAt,
+              }
+            : message
+        )
+      );
+    }
+
+    function handleMessageDeleted(update) {
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(update.messageId)
+            ? {
+                ...message,
+                text: update.text || "This message was deleted",
+                deleted: true,
+              }
+            : message
+        )
+      );
+    }
+
+    socket.on("message-edited", handleMessageEdited);
+    socket.on("message-deleted", handleMessageDeleted);
+
+    return () => {
+      socket.off("message-edited", handleMessageEdited);
+      socket.off("message-deleted", handleMessageDeleted);
+    };
+  }, [socket]);
+
+  // Send a message, optionally replying to another message, optionally with an attachment.
+  async function handleSend(text, replyToId, selectedFile) {
     if (!selectedUser?._id) {
       throw new Error("Select a user first.");
     }
 
-    const savedMessage = await sendChatMessage(
-      token,
-      selectedUser._id,
-      text,
-      replyToId || null
-    );
+    let savedMessage;
+
+    if (selectedFile) {
+      savedMessage = await uploadChatMessage(
+        token,
+        selectedUser._id,
+        selectedFile.blob,
+        selectedFile.name,
+        text,
+        replyToId || null
+      );
+    } else {
+      savedMessage = await sendChatMessage(
+        token,
+        selectedUser._id,
+        text,
+        replyToId || null
+      );
+    }
 
     setMessages((previous) => {
       const exists = previous.some(
@@ -236,39 +370,199 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
     });
 
     setReplyingTo(null);
+
+    if (onConversationUpdated) {
+      onConversationUpdated();
+    }
   }
+
+  // Begin editing one of your messages.
+  function startEditing(message) {
+    setEditingMessageId(String(message._id));
+    setEditText(message.text);
+    setActionError("");
+  }
+
+  function cancelEditing() {
+    setEditingMessageId(null);
+    setEditText("");
+    setActionError("");
+  }
+
+  // Save the edited message.
+  async function handleEditMessage(messageId) {
+    const trimmedText = editText.trim();
+
+    if (!trimmedText || actionLoading) return;
+
+    setActionLoading(true);
+    setActionError("");
+
+    try {
+      const updatedMessage = await editChatMessage(
+        token,
+        messageId,
+        trimmedText
+      );
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId)
+            ? { ...message, ...updatedMessage }
+            : message
+        )
+      );
+
+      cancelEditing();
+    } catch (err) {
+      setActionError(err.message || "Could not edit message.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Delete one of your messages.
+  async function handleDeleteMessage(messageId) {
+    if (actionLoading) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this message?"
+    );
+
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setActionError("");
+
+    try {
+      const deletedMessage = await deleteChatMessage(token, messageId);
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId)
+            ? { ...message, ...deletedMessage }
+            : message
+        )
+      );
+
+      if (String(editingMessageId) === String(messageId)) {
+        cancelEditing();
+      }
+
+      if (String(replyingTo?._id) === String(messageId)) {
+        setReplyingTo(null);
+      }
+    } catch (err) {
+      setActionError(err.message || "Could not delete message.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleAcceptRequest() {
+    if (!selectedUser?._id || acceptingRequest) return;
+    setAcceptingRequest(true);
+    try {
+      await acceptConversation(token, selectedUser._id);
+      if (onConversationUpdated) {
+        onConversationUpdated();
+      }
+    } catch (err) {
+      console.error("Accepting request failed:", err);
+    } finally {
+      setAcceptingRequest(false);
+    }
+  }
+
+  const isOnline = Boolean(
+    selectedUser?._id && onlineUserIds.includes(String(selectedUser._id))
+  );
 
   if (!selectedUser) {
     return (
       <main className="chat-empty">
-        <div className="empty-icon">✳</div>
-        <h2>Your conversations belong here.</h2>
-        <p>Select someone from the sidebar to open a chat.</p>
+        <div className="empty-icon-wrapper">
+          <div className="empty-icon-glow" />
+          <div className="empty-icon">💬</div>
+        </div>
+        <h1 className="empty-brand">KNOT</h1>
+        <h2>Select a conversation to get started</h2>
+        <p>Choose a contact or group from the sidebar, or search to start a new chat.</p>
       </main>
     );
   }
 
+  const userAvatar = getAvatarUrl(selectedUser.profilePhoto);
+
   return (
     <main className="chat-window">
       <header className="chat-header">
-        <div className="avatar large">
-          {(selectedUser.username || "?").charAt(0).toUpperCase()}
+        <div
+          className="avatar large chat-header-avatar clickable"
+          onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+          title="Click to view contact info"
+        >
+          {userAvatar ? (
+            <img
+              src={userAvatar}
+              alt={selectedUser.username}
+              className="avatar-img"
+            />
+          ) : (
+            (selectedUser.username || "?").charAt(0).toUpperCase()
+          )}
+          {isOnline && <span className="online-dot" />}
         </div>
 
-        <div>
+        <div
+          className="chat-header-info clickable"
+          onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+          title="Click to view contact info"
+        >
           <h2>{selectedUser.username}</h2>
-          <span className="chat-status">{selectedUser.email}</span>
+          <span className={`chat-status ${isOnline ? "online" : "offline"}`}>
+            {isOnline ? "Active now" : (selectedUser.email || "Offline")}
+          </span>
         </div>
+
+        <button
+          type="button"
+          className="contact-info-toggle-btn"
+          onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+          title="View contact details"
+        >
+          ⓘ Contact Info
+        </button>
       </header>
 
+      {isRequest && (
+        <div className="chat-request-banner">
+          <div className="chat-request-info">
+            <span className="chat-request-tag">New Conversation Request</span>
+            <span className="chat-request-text">
+              <strong>{selectedUser.username}</strong> wants to connect with you. Reply or accept to start chatting.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="chat-request-accept-btn"
+            onClick={handleAcceptRequest}
+            disabled={acceptingRequest}
+          >
+            {acceptingRequest ? "Accepting..." : "Accept Request"}
+          </button>
+        </div>
+      )}
+
       <section className="messages">
-        <div className="date-label">CONVERSATION</div>
+        <div className="date-label">Today</div>
 
         {loading && (
           <p className="search-hint">Loading messages...</p>
         )}
 
         {error && <p className="search-error">{error}</p>}
+        {actionError && <p className="search-error">{actionError}</p>}
 
         {!loading && !error && messages.length === 0 && (
           <p className="search-hint">
@@ -282,6 +576,9 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
           );
           const mine = senderId === String(currentUser?._id);
           const status = message.status || "sent";
+          const isEditing =
+            String(editingMessageId) === String(message._id);
+          const isDeleted = Boolean(message.deleted);
 
           const replyId = message.replyTo?._id ?? message.replyTo;
           const originalMessage = replyId
@@ -306,57 +603,237 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
               key={message._id}
               className={`message-row ${mine ? "mine" : ""}`}
             >
-              <div className="message-bubble">
-                {replyId && (
-                  <div className="reply-quote">
-                    <strong>
-                      {originalMessage
-                        ? originalSenderName
-                        : "Original message"}
-                    </strong>
-                    <p>
-                      {originalMessage
-                        ? originalMessage.text
-                        : "Message preview unavailable"}
-                    </p>
-                  </div>
-                )}
+              <div className="message-bubble-wrapper">
+                <div className="message-bubble">
+                  {replyId && (
+                    <div className="reply-quote">
+                      <strong>
+                        {originalMessage
+                          ? originalSenderName
+                          : "Original message"}
+                      </strong>
+                      <p>
+                        {originalMessage
+                          ? originalMessage.text
+                          : "Message preview unavailable"}
+                      </p>
+                    </div>
+                  )}
 
-                <p>{message.text}</p>
-
-                <div className="message-meta">
-                  <span>
-                    {message.createdAt
-                      ? new Date(message.createdAt).toLocaleTimeString(
-                          [],
-                          {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }
-                        )
-                      : ""}
-                  </span>
-
-                  {mine && (
-                    <span
-                      className={`message-status ${
-                        status === "read" ? "read" : ""
-                      }`}
-                      title={status}
-                      aria-label={status}
+                  {isEditing ? (
+                    <form
+                      className="edit-message-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        handleEditMessage(message._id);
+                      }}
                     >
-                      {status === "sent" ? "✓" : "✓✓"}
-                    </span>
+                      <textarea
+                        value={editText}
+                        onChange={(event) => setEditText(event.target.value)}
+                        autoFocus
+                        rows={3}
+                        maxLength={5000}
+                        aria-label="Edit message"
+                        disabled={actionLoading}
+                      />
+
+                      <div className="edit-form-actions">
+                        <button
+                          type="submit"
+                          className="edit-btn-save"
+                          disabled={!editText.trim() || actionLoading}
+                        >
+                          {actionLoading ? "Saving..." : "Save"}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="edit-btn-cancel"
+                          onClick={cancelEditing}
+                          disabled={actionLoading}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      {message.attachment &&
+                        message.attachment.fileName &&
+                        !isDeleted &&
+                        (isImageMimeOrExt(
+                          message.attachment.mimeType,
+                          message.attachment.originalName
+                        ) ? (
+                          <div
+                            className="message-attachment-image-wrap"
+                            onClick={() => handleOpenImagePreview(message)}
+                            title="Click to preview image"
+                          >
+                            <img
+                              src={getAttachmentViewUrl(token, message._id)}
+                              alt={
+                                message.attachment.originalName ||
+                                "Attached image"
+                              }
+                              className="message-image-preview"
+                              loading="lazy"
+                            />
+                            <div className="message-image-overlay">
+                              <span className="message-image-preview-badge">
+                                🔍 Preview
+                              </span>
+                              <button
+                                type="button"
+                                className="message-image-download-action"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownload(
+                                    message._id,
+                                    message.attachment.originalName
+                                  );
+                                }}
+                                title="Download image"
+                                aria-label="Download image"
+                              >
+                                ⬇
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="message-attachment-card">
+                            <div className="file-badge">
+                              {getFileBadgeText(
+                                message.attachment.originalName
+                              )}
+                            </div>
+                            <div className="file-card-details">
+                              <span
+                                className="file-card-name"
+                                title={message.attachment.originalName}
+                              >
+                                {message.attachment.originalName}
+                              </span>
+                              <span className="file-card-size">
+                                {formatFileSize(
+                                  message.attachment.fileSize
+                                )}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="file-card-download-btn"
+                              onClick={() =>
+                                handleDownload(
+                                  message._id,
+                                  message.attachment.originalName
+                                )
+                              }
+                              disabled={downloadingId === message._id}
+                              title="Download file"
+                              aria-label={`Download ${message.attachment.originalName}`}
+                            >
+                              {downloadingId === message._id ? "..." : "⬇"}
+                            </button>
+                          </div>
+                        ))}
+
+                      <div className="message-content">
+                        {isDeleted ? (
+                          <span className="deleted-label">This message was deleted</span>
+                        ) : (
+                          <>
+                            {message.text && (
+                              <span className="message-text">
+                                {message.text}
+                              </span>
+                            )}
+                            {message.isEdited && (
+                              <span className="edited-label">(edited)</span>
+                            )}
+                          </>
+                        )}
+
+                        <span className="message-meta">
+                          <span className="message-time">
+                            {message.createdAt
+                              ? new Date(message.createdAt).toLocaleTimeString(
+                                  [],
+                                  {
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  }
+                                )
+                              : ""}
+                          </span>
+
+                          {mine && (
+                            <span
+                              className={`message-status ${
+                                status === "read" ? "read" : ""
+                              }`}
+                              title={status}
+                              aria-label={status}
+                            >
+                              {status === "sent" ? "✓" : "✓✓"}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </>
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="reply-button"
-                  onClick={() => setReplyingTo(message)}
-                >
-                  ↩ Reply
-                </button>
+                {!isEditing && !isDeleted && (
+                  <div className="message-hover-actions">
+                    <button
+                      type="button"
+                      className="msg-action-btn reply-button"
+                      onClick={() => setReplyingTo(message)}
+                      title="Reply"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 17 4 12 9 7" />
+                        <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+                      </svg>
+                      <span>Reply</span>
+                    </button>
+
+                    {mine && (
+                      <>
+                        <button
+                          type="button"
+                          className="msg-action-btn edit-button"
+                          onClick={() => startEditing(message)}
+                          disabled={actionLoading}
+                          title="Edit"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="msg-action-btn delete-message-button delete"
+                          onClick={() => handleDeleteMessage(message._id)}
+                          disabled={actionLoading}
+                          title="Delete"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -375,6 +852,26 @@ function ChatWindow({ selectedUser, currentUser, token, socket }) {
         socket={socket}
         replyTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
+      />
+
+      {/* Full-Screen Image Preview Modal */}
+      <ImagePreviewModal
+        isOpen={Boolean(previewImage)}
+        onClose={() => setPreviewImage(null)}
+        src={previewImage?.src}
+        alt={previewImage?.alt}
+        fileName={previewImage?.fileName}
+        fileSize={previewImage?.fileSize}
+        onDownload={
+          previewImage
+            ? () =>
+                handleDownload(
+                  previewImage.messageId,
+                  previewImage.fileName
+                )
+            : null
+        }
+        downloading={downloadingId === previewImage?.messageId}
       />
     </main>
   );

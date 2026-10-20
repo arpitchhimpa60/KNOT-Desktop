@@ -48,8 +48,11 @@ const signup = async (req, res) => {
       token,
       user: {
         id: user._id,
+        _id: user._id,
         username: user.username,
         email: user.email,
+        profilePhoto: user.profilePhoto || "",
+        bio: user.bio || "",
       },
     });
   } catch (error) {
@@ -111,8 +114,11 @@ const login = async (req, res) => {
       token,
       user: {
         id: user._id,
+        _id: user._id,
         username: user.username,
         email: user.email,
+        profilePhoto: user.profilePhoto || "",
+        bio: user.bio || "",
       },
     });
   } catch (error) {

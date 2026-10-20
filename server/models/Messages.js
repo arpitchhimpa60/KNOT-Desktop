@@ -17,8 +17,15 @@ const messageSchema = new mongoose.Schema(
 
     text: {
       type: String,
-      required: true,
       trim: true,
+      default: "",
+    },
+
+    attachment: {
+      originalName: { type: String, default: null },
+      fileName: { type: String, default: null },
+      fileSize: { type: Number, default: 0 },
+      mimeType: { type: String, default: null },
     },
 
     status: {
@@ -32,11 +39,25 @@ const messageSchema = new mongoose.Schema(
       ref: "Message",
       default: null,
     },
+
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+
+    deleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+messageSchema.index({ sender: 1, recipient: 1, createdAt: -1 });
+messageSchema.index({ recipient: 1, status: 1 });
+messageSchema.index({ createdAt: -1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

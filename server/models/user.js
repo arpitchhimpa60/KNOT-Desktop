@@ -21,6 +21,18 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    profilePhoto: {
+      type: String,
+      default: "",
+    },
+
+    bio: {
+      type: String,
+      default: "Hey there! I am using KNOT.",
+      trim: true,
+      maxLength: 250,
+    },
   },
   {
     timestamps: true,

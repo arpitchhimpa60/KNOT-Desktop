@@ -1,8 +1,12 @@
 
+const path = require("path");
+const fs = require("fs");
+const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const User = require("../models/user");
 const Message = require("../models/Messages");
 const { getIO } = require("../socket");
+const { UPLOADS_DIR } = require("../middleware/uploadMiddleware");
 
 // POST /api/messages
 
@@ -77,6 +81,39 @@ const sendMessage = async (req, res) => {
     const io = getIO();
 
     io.to(String(recipientId)).emit("new-message", message);
+
+    try {
+      const priorCount = await Message.countDocuments({
+        $or: [
+          { sender: senderId, recipient: recipientId },
+          { sender: recipientId, recipient: senderId },
+        ],
+        _id: { $ne: message._id },
+      });
+
+      const isFirstContact = priorCount === 0;
+      const senderUser = await User.findById(senderId).select("_id username email");
+
+      if (isFirstContact) {
+        io.to(String(recipientId)).emit("conversation:request", {
+          message,
+          sender: senderUser,
+        });
+      }
+
+      io.to(String(recipientId)).emit("conversation:updated", {
+        userId: String(senderId),
+        lastMessage: message,
+        isFirstContact,
+      });
+
+      io.to(String(senderId)).emit("conversation:updated", {
+        userId: String(recipientId),
+        lastMessage: message,
+      });
+    } catch (socketErr) {
+      console.error("Conversation socket notification failed:", socketErr);
+    }
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -222,6 +259,18 @@ const markMessagesRead = async (req, res) => {
         messageIds: messageIds.map(String),
         readerId: String(recipientId),
       });
+
+      getIO().to(String(senderId)).emit("conversation:updated", {
+        userId: String(recipientId),
+      });
+
+      getIO().to(String(recipientId)).emit("conversation:updated", {
+        userId: String(senderId),
+      });
+
+      getIO().to(String(recipientId)).emit("conversation:read", {
+        userId: String(senderId),
+      });
     }
 
     return res.status(200).json({
@@ -237,9 +286,380 @@ const markMessagesRead = async (req, res) => {
   }
 };
 
+
+
+const editMessage = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { messageId } = req.params;
+    const { text } = req.body;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(400).json({
+        message: "Invalid message ID",
+      });
+    }
+
+    if (typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({
+        message: "Message text cannot be empty",
+      });
+    }
+
+    const message = await Message.findOneAndUpdate(
+      {
+        _id: messageId,
+        sender: userId,
+        deleted: false,
+      },
+      {
+        $set: {
+          text: text.trim(),
+          isEdited: true,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({
+        message: "Message not found or you cannot edit it",
+      });
+    }
+
+    getIO()
+      .to(String(message.recipient))
+      .to(String(message.sender))
+      .emit("message-edited", {
+        messageId: String(message._id),
+        text: message.text,
+        isEdited: message.isEdited,
+        updatedAt: message.updatedAt,
+      });
+
+    getIO().to(String(message.recipient)).emit("conversation:updated", {
+      userId: String(message.sender),
+      lastMessage: message,
+    });
+    getIO().to(String(message.sender)).emit("conversation:updated", {
+      userId: String(message.recipient),
+      lastMessage: message,
+    });
+
+    return res.status(200).json({
+      message: "Message updated successfully",
+      data: message,
+    });
+  } catch (error) {
+    console.error("Edit message error:", error);
+
+    return res.status(500).json({
+      message: "Could not edit message",
+    });
+  }
+};
+
+const deleteMessage = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { messageId } = req.params;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(400).json({
+        message: "Invalid message ID",
+      });
+    }
+
+    const message = await Message.findOneAndUpdate(
+      {
+        _id: messageId,
+        sender: userId,
+        deleted: false,
+      },
+      {
+        $set: {
+          text: "This message was deleted",
+          deleted: true,
+        },
+      },
+      { new: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({
+        message: "Message not found or you cannot delete it",
+      });
+    }
+
+    getIO()
+      .to(String(message.recipient))
+      .to(String(message.sender))
+      .emit("message-deleted", {
+        messageId: String(message._id),
+        text: message.text,
+        deleted: message.deleted,
+      });
+
+    getIO().to(String(message.recipient)).emit("conversation:updated", {
+      userId: String(message.sender),
+      lastMessage: message,
+    });
+    getIO().to(String(message.sender)).emit("conversation:updated", {
+      userId: String(message.recipient),
+      lastMessage: message,
+    });
+
+    return res.status(200).json({
+      message: "Message deleted successfully",
+      data: message,
+    });
+  } catch (error) {
+    console.error("Delete message error:", error);
+
+    return res.status(500).json({
+      message: "Could not delete message",
+    });
+  }
+};
+
+// POST /api/messages/upload — upload attachment and send direct message
+const uploadAndSendMessage = async (req, res) => {
+  try {
+    const senderId = req.user.userId;
+    const { recipientId, text, replyTo } = req.body;
+    const file = req.file;
+
+    if (!file && (!text || !text.trim())) {
+      return res.status(400).json({
+        message: "A message text or file attachment is required",
+      });
+    }
+
+    if (!recipientId || !mongoose.isValidObjectId(recipientId)) {
+      return res.status(400).json({
+        message: "Valid recipient ID is required",
+      });
+    }
+
+    if (String(senderId) === String(recipientId)) {
+      return res.status(400).json({
+        message: "You cannot send a message to yourself",
+      });
+    }
+
+    const recipient = await User.findById(recipientId);
+    if (!recipient) {
+      return res.status(404).json({
+        message: "Recipient not found",
+      });
+    }
+
+    let originalMessage = null;
+    if (replyTo && mongoose.isValidObjectId(replyTo)) {
+      originalMessage = await Message.findOne({
+        _id: replyTo,
+        $or: [
+          { sender: senderId, recipient: recipientId },
+          { sender: recipientId, recipient: senderId },
+        ],
+      });
+    }
+
+    const messageData = {
+      sender: senderId,
+      recipient: recipientId,
+      text: (text || "").trim(),
+      status: "sent",
+    };
+
+    if (originalMessage) {
+      messageData.replyTo = originalMessage._id;
+    }
+
+    if (file) {
+      messageData.attachment = {
+        originalName: file.originalname,
+        fileName: file.filename,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      };
+    }
+
+    const message = await Message.create(messageData);
+    const io = getIO();
+
+    io.to(String(recipientId)).emit("new-message", message);
+
+    try {
+      const priorCount = await Message.countDocuments({
+        $or: [
+          { sender: senderId, recipient: recipientId },
+          { sender: recipientId, recipient: senderId },
+        ],
+        _id: { $ne: message._id },
+      });
+
+      const isFirstContact = priorCount === 0;
+      const senderUser = await User.findById(senderId).select(
+        "_id username email"
+      );
+
+      if (isFirstContact) {
+        io.to(String(recipientId)).emit("conversation:request", {
+          message,
+          sender: senderUser,
+        });
+      }
+
+      io.to(String(recipientId)).emit("conversation:updated", {
+        userId: String(senderId),
+        lastMessage: message,
+        isFirstContact,
+      });
+
+      io.to(String(senderId)).emit("conversation:updated", {
+        userId: String(recipientId),
+        lastMessage: message,
+      });
+    } catch (socketErr) {
+      console.error("Conversation socket notification failed:", socketErr);
+    }
+
+    return res.status(201).json({
+      message: "Message with attachment sent successfully",
+      data: message,
+    });
+  } catch (error) {
+    console.error("Upload and send message error:", error);
+    return res.status(500).json({
+      message: "Could not send message with attachment",
+    });
+  }
+};
+
+// GET /api/messages/:messageId/attachment — authenticated download
+const downloadAttachment = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { messageId } = req.params;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(400).json({ message: "Invalid message ID" });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message || !message.attachment || !message.attachment.fileName) {
+      return res.status(404).json({ message: "Attachment not found" });
+    }
+
+    // Security check: only conversation participants can download
+    const isParticipant =
+      String(message.sender) === String(userId) ||
+      String(message.recipient) === String(userId);
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        message: "Access denied. You are not a participant in this conversation",
+      });
+    }
+
+    // Path traversal safety
+    const safeName = path.basename(message.attachment.fileName);
+    const filePath = path.resolve(UPLOADS_DIR, safeName);
+
+    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found on server" });
+    }
+
+    const downloadName = message.attachment.originalName || safeName;
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(downloadName)}"`
+    );
+    res.setHeader(
+      "Content-Type",
+      message.attachment.mimeType || "application/octet-stream"
+    );
+
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error("Download attachment error:", error);
+    return res.status(500).json({ message: "Could not download attachment" });
+  }
+};
+
+// GET /api/messages/:messageId/view — authenticated inline stream (e.g. for images)
+const viewAttachment = async (req, res) => {
+  try {
+    let token = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (req.query.token) {
+      token = req.query.token;
+    }
+
+    if (!token) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const userId = decoded.userId;
+    const { messageId } = req.params;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(400).json({ message: "Invalid message ID" });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message || !message.attachment || !message.attachment.fileName) {
+      return res.status(404).json({ message: "Attachment not found" });
+    }
+
+    const isParticipant =
+      String(message.sender) === String(userId) ||
+      String(message.recipient) === String(userId);
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        message: "Access denied. You are not a participant in this conversation",
+      });
+    }
+
+    const safeName = path.basename(message.attachment.fileName);
+    const filePath = path.resolve(UPLOADS_DIR, safeName);
+
+    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found on server" });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      message.attachment.mimeType || "application/octet-stream"
+    );
+    res.setHeader("Content-Disposition", "inline");
+
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error("View attachment error:", error);
+    return res.status(500).json({ message: "Could not view attachment" });
+  }
+};
+
 module.exports = {
   sendMessage,
+  uploadAndSendMessage,
   getChatHistory,
   markMessageDelivered,
   markMessagesRead,
+  editMessage,
+  deleteMessage,
+  downloadAttachment,
+  viewAttachment,
 };

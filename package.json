@@ -1,3 +1,4 @@
+
 {
   "name": "knot-desktop",
   "version": "1.0.0",
@@ -5,7 +6,42 @@
   "main": "electron/main.js",
   "scripts": {
     "client": "npm run dev --prefix client",
-    "electron": "electron ."
+    "electron": "electron .",
+    "build:frontend": "npm run build --prefix client",
+    "dist:mac": "npm run build:frontend && electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "com.knot.desktop",
+    "productName": "KNOT",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "client/dist/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!**/.git/**",
+          "!**/coverage/**",
+          "!**/.env",
+          "!**/.env.*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.social-networking"
+    }
   },
   "repository": {
     "type": "git",
@@ -20,7 +56,8 @@
   },
   "homepage": "https://github.com/arpitchhimpa60/KNOT-Desktop#readme",
   "devDependencies": {
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
