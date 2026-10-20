@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import GroupInfoModal from "./GroupInfoModal";
 import EmojiPicker from "./EmojiPicker";
 import ImagePreviewModal from "./ImagePreviewModal";
+import { isSameCalendarDay, formatDateSeparator, formatMessageTime } from "../utils/dateUtils";
 import {
   getGroupMessages,
   sendGroupMessage,
@@ -36,6 +37,21 @@ function getFileBadgeText(fileName) {
   return (ext || "FILE").toUpperCase().slice(0, 4);
 }
 
+function scrollToMessageElement(element, container) {
+  if (!element || !container) return;
+  const containerRect = container.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const currentScroll = container.scrollTop;
+  const relativeOffset = elementRect.top - containerRect.top;
+  const targetScroll =
+    currentScroll + relativeOffset - container.clientHeight / 2 + elementRect.height / 2;
+
+  container.scrollTo({
+    top: Math.max(0, targetScroll),
+    behavior: "smooth",
+  });
+}
+
 function GroupChatWindow({
   selectedGroup,
   currentUser,
@@ -64,6 +80,10 @@ function GroupChatWindow({
   const [previewImage, setPreviewImage] = useState(null);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
+
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+  const highlightTimerRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
   // Generate object URL for staging image preview
   useEffect(() => {
@@ -190,8 +210,88 @@ function GroupChatWindow({
 
     return () => {
       cancelled = true;
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+      setHighlightedMessageId(null);
     };
   }, [selectedGroup?._id, token]);
+
+  function triggerHighlight(messageId) {
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+    }
+    setHighlightedMessageId(String(messageId));
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+      highlightTimerRef.current = null;
+    }, 1800);
+  }
+
+  function attemptScrollAndHighlight(messageId) {
+    let attempts = 0;
+    const maxAttempts = 6;
+
+    function tryFind() {
+      attempts++;
+      const el = document.getElementById(`msg-${messageId}`);
+      if (el && messagesContainerRef.current) {
+        scrollToMessageElement(el, messagesContainerRef.current);
+        triggerHighlight(messageId);
+      } else if (attempts < maxAttempts) {
+        setTimeout(tryFind, 50);
+      } else {
+        setActionError("Original message is no longer available.");
+        setTimeout(() => setActionError(""), 3000);
+      }
+    }
+
+    tryFind();
+  }
+
+  async function handleScrollToOriginalMessage(replyId) {
+    if (!replyId) return;
+    const strReplyId = String(replyId);
+
+    // 1. If already rendered in current messages, scroll and highlight
+    const existingIndex = messages.findIndex(
+      (m) => String(m._id) === strReplyId
+    );
+
+    if (existingIndex !== -1) {
+      attemptScrollAndHighlight(strReplyId);
+      return;
+    }
+
+    // 2. If not rendered, fetch history window around target message
+    try {
+      setActionError("");
+      const res = await getGroupMessages(token, selectedGroup._id, 1, 50, {
+        targetMessageId: strReplyId,
+      });
+
+      const loadedMessages = res.messages || [];
+      if (loadedMessages.length > 0) {
+        setMessages((prev) => {
+          const map = new Map();
+          for (const m of prev) map.set(String(m._id), m);
+          for (const m of loadedMessages) map.set(String(m._id), m);
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+          );
+        });
+
+        attemptScrollAndHighlight(strReplyId);
+      } else {
+        setActionError("Original message is no longer available.");
+        setTimeout(() => setActionError(""), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to load original group message:", err);
+      setActionError("Original message is no longer available.");
+      setTimeout(() => setActionError(""), 3000);
+    }
+  }
 
   // Load older messages for pagination
   async function handleLoadOlder() {
@@ -599,7 +699,7 @@ function GroupChatWindow({
       </header>
 
       {/* Messages Section */}
-      <section className="messages">
+      <section className="messages" ref={messagesContainerRef}>
         <div className="date-label">GROUP CONVERSATION</div>
 
         {hasMore && (
@@ -625,9 +725,7 @@ function GroupChatWindow({
           </p>
         )}
 
-        {messages.length > 0 && <div className="date-label">Today</div>}
-
-        {messages.map((message) => {
+        {messages.map((message, index) => {
           const senderId = String(message.sender?._id ?? message.sender);
           const mine = senderId === currentUserId;
           const senderName =
@@ -655,13 +753,42 @@ function GroupChatWindow({
           // Can delete if message is mine OR current user is an admin of this group
           const canDelete = (mine || isAdmin) && !isDeleted;
           const canEdit = mine && !isDeleted;
+
+          // Date Separator calculation
+          const timestamp = message.createdAt || message.timestamp;
+          const currentDate = timestamp ? new Date(timestamp) : null;
+          const isValidDate = currentDate && !isNaN(currentDate.getTime());
+
+          const prevMessage = index > 0 ? messages[index - 1] : null;
+          const prevTimestamp = prevMessage ? (prevMessage.createdAt || prevMessage.timestamp) : null;
+          const prevDate = prevTimestamp ? new Date(prevTimestamp) : null;
+          const isPrevValid = prevDate && !isNaN(prevDate.getTime());
+
+          const showDateSeparator =
+            isValidDate && (!isPrevValid || !isSameCalendarDay(currentDate, prevDate));
+
+          const dateSeparatorLabel = showDateSeparator
+            ? formatDateSeparator(currentDate)
+            : null;
+
           return (
-            <div
-              key={message._id}
-              className={`message-row ${mine ? "mine" : ""}`}
-            >
+            <Fragment key={message._id}>
+              {showDateSeparator && (
+                <div className="date-label">{dateSeparatorLabel}</div>
+              )}
+
+              <div
+                id={`msg-${message._id}`}
+                className={`message-row ${mine ? "mine" : ""}`}
+              >
               <div className="message-bubble-wrapper">
-                <div className="message-bubble group-message-bubble">
+                <div
+                  className={`message-bubble group-message-bubble ${
+                    highlightedMessageId === String(message._id)
+                      ? "reply-highlighted"
+                      : ""
+                  }`}
+                >
                   {/* Sender Attribution for other members in group */}
                   {!mine && (
                     <strong className="group-sender-name">{senderName}</strong>
@@ -669,13 +796,34 @@ function GroupChatWindow({
 
                   {/* Reply Quote preview */}
                   {replyId && (
-                    <div className="reply-quote">
+                    <div
+                      className="reply-quote"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleScrollToOriginalMessage(replyId);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleScrollToOriginalMessage(replyId);
+                        }
+                      }}
+                      title="Click to jump to original message"
+                      aria-label="Click to jump to original message"
+                    >
                       <strong>
                         {originalMessage ? originalSenderName : "Original message"}
                       </strong>
                       <p>
                         {originalMessage
-                          ? originalMessage.text
+                          ? (originalMessage.deleted
+                              ? "This message was deleted"
+                              : originalMessage.text ||
+                                (originalMessage.attachment?.originalName
+                                  ? `📎 ${originalMessage.attachment.originalName}`
+                                  : "Attachment"))
                           : "Message preview unavailable"}
                       </p>
                     </div>
@@ -822,13 +970,7 @@ function GroupChatWindow({
 
                         <span className="message-meta">
                           <span className="message-time">
-                            {message.createdAt
-                              ? new Date(message.createdAt).toLocaleTimeString([], {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })
-                              : ""}
+                            {formatMessageTime(message.createdAt || message.timestamp)}
                           </span>
                           {mine && (
                             <span
@@ -902,6 +1044,7 @@ function GroupChatWindow({
                 )}
               </div>
             </div>
+            </Fragment>
           );
         })}
 

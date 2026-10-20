@@ -75,9 +75,14 @@ export async function searchUsers(token, query) {
 }
 
 
-export async function getChatHistory(token, userId) {
+export async function getChatHistory(token, userId, options = {}) {
+  const query = new URLSearchParams();
+  if (options.targetMessageId) {
+    query.set("targetMessageId", options.targetMessageId);
+  }
+  const qs = query.toString() ? `?${query.toString()}` : "";
   const response = await fetch(
-    `${API_URL}/messages/${encodeURIComponent(userId)}`,
+    `${API_URL}/messages/${encodeURIComponent(userId)}${qs}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -421,9 +426,22 @@ export async function deleteGroup(token, groupId) {
   return data;
 }
 
-export async function getGroupMessages(token, groupId, page = 1, limit = 50) {
+export async function getGroupMessages(
+  token,
+  groupId,
+  page = 1,
+  limit = 50,
+  options = {}
+) {
+  const query = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (options.targetMessageId) {
+    query.set("targetMessageId", options.targetMessageId);
+  }
   const response = await fetch(
-    `${API_URL}/groups/${encodeURIComponent(groupId)}/messages?page=${page}&limit=${limit}`,
+    `${API_URL}/groups/${encodeURIComponent(groupId)}/messages?${query.toString()}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,

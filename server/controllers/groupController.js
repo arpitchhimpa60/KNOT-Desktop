@@ -892,6 +892,53 @@ const getGroupMessages = async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const before = req.query.before;
+    const targetMessageId = req.query.targetMessageId;
+
+    if (targetMessageId && mongoose.isValidObjectId(targetMessageId)) {
+      const targetMsg = await GroupMessage.findOne({
+        _id: targetMessageId,
+        group: groupId,
+      });
+
+      if (targetMsg) {
+        const beforeMessages = await GroupMessage.find({
+          group: groupId,
+          createdAt: { $lt: targetMsg.createdAt },
+        })
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .populate("sender", "_id username email")
+          .populate({
+            path: "replyTo",
+            select: "_id text sender deleted isEdited",
+            populate: { path: "sender", select: "_id username email" },
+          });
+
+        const afterMessages = await GroupMessage.find({
+          group: groupId,
+          createdAt: { $gte: targetMsg.createdAt },
+        })
+          .sort({ createdAt: 1 })
+          .limit(50)
+          .populate("sender", "_id username email")
+          .populate({
+            path: "replyTo",
+            select: "_id text sender deleted isEdited",
+            populate: { path: "sender", select: "_id username email" },
+          });
+
+        const messages = [...beforeMessages.reverse(), ...afterMessages];
+
+        return res.status(200).json({
+          count: messages.length,
+          total: messages.length,
+          page: 1,
+          totalPages: 1,
+          hasMore: false,
+          messages,
+        });
+      }
+    }
 
     const filter = { group: groupId };
 

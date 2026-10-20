@@ -141,14 +141,55 @@ const getChatHistory = async (req, res) => {
       });
     }
 
-    const messages = await Message.find({
-      $or: [
-        { sender: myId, recipient: otherUserId },
-        { sender: otherUserId, recipient: myId },
-      ],
-    })
-      .sort({ createdAt: 1 })
-      .limit(100);
+    const { targetMessageId } = req.query;
+    let messages = null;
+
+    if (targetMessageId && mongoose.isValidObjectId(targetMessageId)) {
+      const target = await Message.findOne({
+        _id: targetMessageId,
+        $or: [
+          { sender: myId, recipient: otherUserId },
+          { sender: otherUserId, recipient: myId },
+        ],
+      });
+
+      if (target) {
+        // Fetch up to 20 messages before the target message
+        const beforeMessages = await Message.find({
+          $or: [
+            { sender: myId, recipient: otherUserId },
+            { sender: otherUserId, recipient: myId },
+          ],
+          createdAt: { $lt: target.createdAt },
+        })
+          .sort({ createdAt: -1 })
+          .limit(20);
+
+        // Fetch up to 80 messages from target forward
+        const afterMessages = await Message.find({
+          $or: [
+            { sender: myId, recipient: otherUserId },
+            { sender: otherUserId, recipient: myId },
+          ],
+          createdAt: { $gte: target.createdAt },
+        })
+          .sort({ createdAt: 1 })
+          .limit(80);
+
+        messages = [...beforeMessages.reverse(), ...afterMessages];
+      }
+    }
+
+    if (!messages) {
+      messages = await Message.find({
+        $or: [
+          { sender: myId, recipient: otherUserId },
+          { sender: otherUserId, recipient: myId },
+        ],
+      })
+        .sort({ createdAt: 1 })
+        .limit(100);
+    }
 
     return res.status(200).json({
       count: messages.length,

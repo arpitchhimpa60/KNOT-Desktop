@@ -1202,7 +1202,7 @@ body {
   word-break: break-word;
   font-size: 14.2px;
   line-height: 19px;
-  transition: box-shadow 0.15s ease;
+  transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
 .message-row.mine .message-bubble {
@@ -1216,6 +1216,34 @@ body {
 .message-row:hover .message-bubble,
 .message-row.mine:hover .message-bubble {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* WhatsApp-style temporary light-blue highlight when jumping to a replied message */
+.message-bubble.reply-highlighted {
+  position: relative;
+  border-left: 4px solid #38bdf8 !important;
+  background-color: rgba(14, 116, 144, 0.38) !important;
+  box-shadow: 0 0 0 1.5px rgba(56, 189, 248, 0.6), 0 4px 18px rgba(56, 189, 248, 0.25) !important;
+  animation: replyPulse 0.45s ease-out;
+}
+
+[data-theme="light"] .message-bubble.reply-highlighted {
+  border-left: 4px solid #0284c7 !important;
+  background-color: #e0f2fe !important;
+  border-color: #7dd3fc !important;
+  box-shadow: 0 0 0 1.5px #0284c7, 0 4px 16px rgba(2, 132, 199, 0.22) !important;
+}
+
+@keyframes replyPulse {
+  0% {
+    transform: scale(0.985);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .group-sender-name {
@@ -1317,7 +1345,8 @@ body {
   background: var(--reply-quote-bg);
   max-width: 100%;
   cursor: pointer;
-  transition: background 0.15s ease;
+  user-select: none;
+  transition: all 0.15s ease;
 }
 
 .message-row:not(.mine) .reply-quote {
@@ -1326,7 +1355,12 @@ body {
 }
 
 .reply-quote:hover {
-  filter: brightness(0.95);
+  filter: brightness(0.92);
+  transform: translateX(2px);
+}
+
+.reply-quote:active {
+  transform: translateX(0);
 }
 
 .reply-quote strong {
