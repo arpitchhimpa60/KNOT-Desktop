@@ -2034,41 +2034,204 @@ body {
   transform: scale(1.1);
 }
 
+/* ==========================================================================
+   Message Attachment Card & Bubble Sizing
+   ========================================================================== */
+
+/* Bubble with attachment: fit-content with sensible max/min width */
+.message-bubble.has-attachment {
+  width: fit-content;
+  min-width: 260px;
+  max-width: min(100%, 360px);
+}
+
+/* When the message contains only the attachment (no text caption) */
+.message-bubble.attachment-only {
+  padding: 4px 4px 3px 4px;
+}
+
+.message-bubble.attachment-only .message-attachment-card {
+  margin: 0;
+}
+
+.message-bubble.attachment-only .message-meta {
+  float: right;
+  margin-top: 3px;
+  margin-bottom: 1px;
+  margin-right: 4px;
+  margin-left: 8px;
+  line-height: 13px;
+  height: 13px;
+}
+
+/* When the message contains an attachment with text caption */
+.message-bubble.has-attachment:not(.attachment-only) {
+  padding: 5px 5px 6px 5px;
+}
+
+.message-bubble.has-attachment:not(.attachment-only) .message-attachment-card {
+  margin: 0 0 5px 0;
+}
+
+.message-bubble.has-attachment:not(.attachment-only) .message-text {
+  display: block;
+  padding: 1px 4px 0 4px;
+  font-size: 14px;
+  line-height: 19px;
+}
+
+/* Attachment Card Container */
 .message-attachment-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  margin: 4px 0 8px;
+  gap: 10px;
+  padding: 8px 10px;
   background: var(--file-card-bg);
   border: 1px solid var(--file-card-border);
-  border-radius: 10px;
-  min-width: 220px;
-  max-width: 100%;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+/* Sent message attachment card styling */
+.message-row.mine .message-attachment-card {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .message-row.mine .message-attachment-card {
+  background: rgba(5, 150, 105, 0.09);
+  border-color: rgba(5, 150, 105, 0.22);
+}
+
+[data-theme="dark"] .message-row.mine .message-attachment-card {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* File Badge & Category Colors */
 .file-badge {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
-  background: rgba(5, 150, 105, 0.15);
-  color: var(--primary-emerald);
-  font-weight: 800;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  border-radius: 6px;
   flex-shrink: 0;
-  border: 1px solid rgba(5, 150, 105, 0.35);
+  user-select: none;
+  transition: all 0.15s ease;
 }
 
+.file-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.file-badge-text {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* Category: Excel / Spreadsheets (Green / Emerald) */
+.file-badge-excel {
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #059669;
+}
+[data-theme="dark"] .file-badge-excel {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+/* Category: PDF (Red / Crimson) */
+.file-badge-pdf {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #dc2626;
+}
+[data-theme="dark"] .file-badge-pdf {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+/* Category: Word Documents (Blue) */
+.file-badge-word {
+  background: rgba(37, 99, 235, 0.14);
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  color: #2563eb;
+}
+[data-theme="dark"] .file-badge-word {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(37, 99, 235, 0.4);
+  color: #60a5fa;
+}
+
+/* Category: Archives (Amber / Orange) */
+.file-badge-archive {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #d97706;
+}
+[data-theme="dark"] .file-badge-archive {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+/* Category: Text & Code (Indigo / Purple) */
+.file-badge-code {
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #4f46e5;
+}
+[data-theme="dark"] .file-badge-code {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #818cf8;
+}
+
+/* Category: Presentation (Orange) */
+.file-badge-presentation {
+  background: rgba(234, 88, 12, 0.14);
+  border: 1px solid rgba(234, 88, 12, 0.35);
+  color: #ea580c;
+}
+[data-theme="dark"] .file-badge-presentation {
+  background: rgba(234, 88, 12, 0.18);
+  border-color: rgba(234, 88, 12, 0.4);
+  color: #fb923c;
+}
+
+/* Category: Generic / Other */
+.file-badge-generic {
+  background: rgba(100, 116, 139, 0.14);
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  color: #475569;
+}
+[data-theme="dark"] .file-badge-generic {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #94a3b8;
+}
+
+/* Filename & Details Column */
 .file-card-details {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1;
   gap: 2px;
+  justify-content: center;
 }
 
 .file-card-details span {
@@ -2080,29 +2243,46 @@ body {
   font-size: 13px !important;
   font-weight: 600 !important;
   color: var(--file-card-name) !important;
+  line-height: 1.25 !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  cursor: default;
+}
+
+.message-row.mine .file-card-name {
+  color: var(--file-card-name) !important;
+}
+
+[data-theme="light"] .message-row.mine .file-card-name {
+  color: #064e3b !important;
 }
 
 .file-card-size {
   font-size: 11px !important;
+  line-height: 1.2 !important;
   color: var(--file-card-size) !important;
 }
 
+[data-theme="light"] .message-row.mine .file-card-size {
+  color: #047857 !important;
+}
+
+/* Centered Download Action Button */
 .file-card-download-btn {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 50%;
   background: var(--file-card-btn-bg);
   border: 1px solid var(--file-card-btn-border);
   color: var(--file-card-btn-text);
-  font-size: 14px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s ease;
+  align-self: center;
+  transition: all 0.18s ease;
   padding: 0;
 }
 
@@ -2110,12 +2290,36 @@ body {
   background: var(--primary-emerald);
   color: #ffffff;
   border-color: var(--primary-emerald-dark);
-  transform: translateY(-1px);
+  transform: scale(1.06);
+}
+
+.file-card-download-btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .file-card-download-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.file-download-icon {
+  display: block;
+}
+
+.file-download-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: fileSpin 0.75s linear infinite;
+}
+
+@keyframes fileSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ==========================================================================

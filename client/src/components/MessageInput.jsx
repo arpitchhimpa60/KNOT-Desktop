@@ -152,7 +152,15 @@ function MessageInput({
         <div className="reply-composer">
           <div className="reply-composer-content">
             <strong>Replying to {replySenderName}</strong>
-            <p>{replyTo.text}</p>
+            <p>
+              {replyTo.text
+                ? (replyTo.attachment?.originalName
+                    ? `📎 ${replyTo.attachment.originalName} — ${replyTo.text}`
+                    : replyTo.text)
+                : (replyTo.attachment?.originalName
+                    ? `📎 ${replyTo.attachment.originalName}`
+                    : "Message")}
+            </p>
           </div>
 
           <button

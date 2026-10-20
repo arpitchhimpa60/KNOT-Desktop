@@ -13,29 +13,8 @@ import {
   deleteGroupMessage,
 } from "../api";
 
-function formatFileSize(bytes) {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-}
-
-function isImageMimeOrExt(mimeType, fileName) {
-  if (mimeType && mimeType.startsWith("image/")) return true;
-  const ext = (fileName || "").toLowerCase().split(".").pop();
-  return ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
-}
-
-function getFileBadgeText(fileName) {
-  const ext = (fileName || "").toLowerCase().split(".").pop();
-  if (["pdf"].includes(ext)) return "PDF";
-  if (["doc", "docx"].includes(ext)) return "DOC";
-  if (["xls", "xlsx", "csv"].includes(ext)) return "SHEET";
-  if (["zip", "tar", "gz", "7z"].includes(ext)) return "ZIP";
-  if (["txt", "md", "json", "log"].includes(ext)) return "TXT";
-  return (ext || "FILE").toUpperCase().slice(0, 4);
-}
+import FileAttachmentCard from "./FileAttachmentCard";
+import { formatFileSize, isImageMimeOrExt } from "../utils/fileUtils";
 
 function scrollToMessageElement(element, container) {
   if (!element || !container) return;
@@ -771,6 +750,19 @@ function GroupChatWindow({
             ? formatDateSeparator(currentDate)
             : null;
 
+          // Attachment status
+          const hasAttachment = Boolean(
+            message.attachment && message.attachment.fileName && !isDeleted
+          );
+          const isImage =
+            hasAttachment &&
+            isImageMimeOrExt(
+              message.attachment.mimeType,
+              message.attachment.originalName
+            );
+          const isFileAttachment = hasAttachment && !isImage;
+          const isAttachmentOnly = isFileAttachment && !message.text;
+
           return (
             <Fragment key={message._id}>
               {showDateSeparator && (
@@ -784,6 +776,10 @@ function GroupChatWindow({
               <div className="message-bubble-wrapper">
                 <div
                   className={`message-bubble group-message-bubble ${
+                    isFileAttachment ? "has-attachment" : ""
+                  } ${
+                    isAttachmentOnly ? "attachment-only" : ""
+                  } ${
                     highlightedMessageId === String(message._id)
                       ? "reply-highlighted"
                       : ""
@@ -820,10 +816,11 @@ function GroupChatWindow({
                         {originalMessage
                           ? (originalMessage.deleted
                               ? "This message was deleted"
-                              : originalMessage.text ||
-                                (originalMessage.attachment?.originalName
-                                  ? `📎 ${originalMessage.attachment.originalName}`
-                                  : "Attachment"))
+                              : originalMessage.attachment?.originalName
+                                ? (originalMessage.text
+                                    ? `📎 ${originalMessage.attachment.originalName} — ${originalMessage.text}`
+                                    : `📎 ${originalMessage.attachment.originalName}`)
+                                : originalMessage.text || "Message")
                           : "Message preview unavailable"}
                       </p>
                     </div>
@@ -915,41 +912,12 @@ function GroupChatWindow({
                             </div>
                           </div>
                         ) : (
-                          <div className="message-attachment-card">
-                            <div className="file-badge">
-                              {getFileBadgeText(
-                                message.attachment.originalName
-                              )}
-                            </div>
-                            <div className="file-card-details">
-                              <span
-                                className="file-card-name"
-                                title={message.attachment.originalName}
-                              >
-                                {message.attachment.originalName}
-                              </span>
-                              <span className="file-card-size">
-                                {formatFileSize(
-                                  message.attachment.fileSize
-                                )}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              className="file-card-download-btn"
-                              onClick={() =>
-                                handleDownload(
-                                  message._id,
-                                  message.attachment.originalName
-                                )
-                              }
-                              disabled={downloadingId === message._id}
-                              title="Download file"
-                              aria-label={`Download ${message.attachment.originalName}`}
-                            >
-                              {downloadingId === message._id ? "..." : "⬇"}
-                            </button>
-                          </div>
+                          <FileAttachmentCard
+                            attachment={message.attachment}
+                            messageId={message._id}
+                            isDownloading={downloadingId === message._id}
+                            onDownload={handleDownload}
+                          />
                         ))}
 
                       <div className="message-content">
@@ -1066,7 +1034,15 @@ function GroupChatWindow({
                   ? "yourself"
                   : replyingTo.sender?.username || "message"}
               </strong>
-              <p>{replyingTo.text}</p>
+              <p>
+                {replyingTo.text
+                  ? (replyingTo.attachment?.originalName
+                      ? `📎 ${replyingTo.attachment.originalName} — ${replyingTo.text}`
+                      : replyingTo.text)
+                  : (replyingTo.attachment?.originalName
+                      ? `📎 ${replyingTo.attachment.originalName}`
+                      : "Message")}
+              </p>
             </div>
             <button
               type="button"
