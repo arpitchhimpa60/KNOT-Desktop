@@ -2,6 +2,22 @@ const mongoose = require("mongoose");
 const User = require("../models/user");
 const { getIO } = require("../socket");
 
+/**
+ * Broadcast user profile updates to all connected sockets
+ */
+function notifyProfileUpdated(user) {
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit("user:profile-updated", {
+        user,
+      });
+    }
+  } catch (socketErr) {
+    console.error("Socket emit on user profile update failed:", socketErr);
+  }
+}
+
 const searchUsers = async (req, res) => {
   try {
     const query = req.query.q?.trim();
@@ -25,14 +41,13 @@ const searchUsers = async (req, res) => {
       .select("_id username email profilePhoto bio createdAt")
       .limit(20);
 
-    res.status(200).json({
+    return res.status(200).json({
       count: users.length,
       users,
     });
   } catch (error) {
     console.error("Search users error:", error.message);
-
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
@@ -111,19 +126,11 @@ const updateProfile = async (req, res) => {
 
     await user.save();
 
-    const sanitized = await User.findById(userId).select("-password");
+    // Convert saved document to object without password to avoid redundant DB query
+    const sanitized = user.toObject();
+    delete sanitized.password;
 
-    // Broadcast profile update via socket
-    try {
-      const io = getIO();
-      if (io) {
-        io.emit("user:profile-updated", {
-          user: sanitized,
-        });
-      }
-    } catch (socketErr) {
-      console.error("Socket emit on updateProfile failed:", socketErr);
-    }
+    notifyProfileUpdated(sanitized);
 
     return res.status(200).json({
       message: "Profile updated successfully",
@@ -154,16 +161,7 @@ const uploadAvatar = async (req, res) => {
       { new: true }
     ).select("-password");
 
-    try {
-      const io = getIO();
-      if (io) {
-        io.emit("user:profile-updated", {
-          user,
-        });
-      }
-    } catch (socketErr) {
-      console.error("Socket emit on uploadAvatar failed:", socketErr);
-    }
+    notifyProfileUpdated(user);
 
     return res.status(200).json({
       message: "Profile photo uploaded successfully",
@@ -188,16 +186,7 @@ const removeAvatar = async (req, res) => {
       { new: true }
     ).select("-password");
 
-    try {
-      const io = getIO();
-      if (io) {
-        io.emit("user:profile-updated", {
-          user,
-        });
-      }
-    } catch (socketErr) {
-      console.error("Socket emit on removeAvatar failed:", socketErr);
-    }
+    notifyProfileUpdated(user);
 
     return res.status(200).json({
       message: "Profile photo removed",
