@@ -22,3 +22,7 @@ electron/dist/
 # Logs
 *.log
 npm-debug.log*
+
+# User uploads and generated test attachments
+server/uploads/*
+!server/uploads/.gitkeep
