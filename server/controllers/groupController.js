@@ -8,6 +8,34 @@ const User = require("../models/user");
 const { getIO } = require("../socket");
 const { UPLOADS_DIR } = require("../middleware/uploadMiddleware");
 
+const USER_FIELDS = "_id username email";
+
+/**
+ * Helper to populate standard user fields (creator, admins, members) on a Group query
+ */
+function populateGroup(query) {
+  return query
+    .populate("creator", USER_FIELDS)
+    .populate("admins", USER_FIELDS)
+    .populate("members", USER_FIELDS);
+}
+
+/**
+ * Helper to check if a user is a member of a group (works with populated or unpopulated arrays)
+ */
+function isMember(group, userId) {
+  if (!group || !Array.isArray(group.members)) return false;
+  return group.members.some((m) => String(m._id || m) === String(userId));
+}
+
+/**
+ * Helper to check if a user is an admin of a group (works with populated or unpopulated arrays)
+ */
+function isAdmin(group, userId) {
+  if (!group || !Array.isArray(group.admins)) return false;
+  return group.admins.some((a) => String(a._id || a) === String(userId));
+}
+
 // POST /api/groups — create a group
 const createGroup = async (req, res) => {
   try {
@@ -62,9 +90,9 @@ const createGroup = async (req, res) => {
     });
 
     await group.populate([
-      { path: "creator", select: "_id username email" },
-      { path: "members", select: "_id username email" },
-      { path: "admins", select: "_id username email" },
+      { path: "creator", select: USER_FIELDS },
+      { path: "members", select: USER_FIELDS },
+      { path: "admins", select: USER_FIELDS },
     ]);
 
     // Join all connected member sockets to the group room and notify them
@@ -97,11 +125,9 @@ const getGroups = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const groups = await Group.find({ members: userId })
-      .sort({ updatedAt: -1 })
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const groups = await populateGroup(
+      Group.find({ members: userId }).sort({ updatedAt: -1 })
+    );
 
     // Attach last message for each group
     const groupsWithLastMessage = await Promise.all(
@@ -141,10 +167,7 @@ const getGroupById = async (req, res) => {
       });
     }
 
-    const group = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const group = await populateGroup(Group.findById(groupId));
 
     if (!group) {
       return res.status(404).json({
@@ -153,8 +176,7 @@ const getGroupById = async (req, res) => {
     }
 
     // Ensure only members can view details
-    const isMember = group.members.some((m) => String(m._id) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -191,8 +213,7 @@ const addMembers = async (req, res) => {
     }
 
     // Only admin can add members
-    const isAdmin = group.admins.some((a) => String(a) === String(userId));
-    if (!isAdmin) {
+    if (!isAdmin(group, userId)) {
       return res.status(403).json({
         message: "Only group administrators can add members",
       });
@@ -230,10 +251,7 @@ const addMembers = async (req, res) => {
     const newMembers = usersToAdd.filter((u) => !existingMemberSet.has(String(u._id)));
 
     if (newMembers.length === 0) {
-      const populated = await Group.findById(groupId)
-        .populate("creator", "_id username email")
-        .populate("admins", "_id username email")
-        .populate("members", "_id username email");
+      const populated = await populateGroup(Group.findById(groupId));
 
       return res.status(200).json({
         message: "All specified users are already group members",
@@ -248,10 +266,7 @@ const addMembers = async (req, res) => {
 
     await group.save();
 
-    const populatedGroup = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const populatedGroup = await populateGroup(Group.findById(groupId));
 
     // Sockets: join new members to group room and broadcast update
     try {
@@ -311,16 +326,14 @@ const removeMember = async (req, res) => {
     }
 
     // Only admin can remove members
-    const isAdmin = group.admins.some((a) => String(a) === String(requesterId));
-    if (!isAdmin) {
+    if (!isAdmin(group, requesterId)) {
       return res.status(403).json({
         message: "Only group administrators can remove members",
       });
     }
 
     // Verify target user is in group
-    const isTargetMember = group.members.some((m) => String(m) === String(targetUserId));
-    if (!isTargetMember) {
+    if (!isMember(group, targetUserId)) {
       return res.status(404).json({
         message: "User is not a member of this group",
       });
@@ -341,8 +354,7 @@ const removeMember = async (req, res) => {
     }
 
     // Cannot remove the only admin
-    const isTargetAdmin = group.admins.some((a) => String(a) === String(targetUserId));
-    if (isTargetAdmin && group.admins.length === 1) {
+    if (isAdmin(group, targetUserId) && group.admins.length === 1) {
       return res.status(400).json({
         message: "Cannot remove the only administrator of the group",
       });
@@ -353,10 +365,7 @@ const removeMember = async (req, res) => {
 
     await group.save();
 
-    const populatedGroup = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const populatedGroup = await populateGroup(Group.findById(groupId));
 
     // Sockets: remove target from room and broadcast update
     try {
@@ -410,14 +419,13 @@ const leaveGroup = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(400).json({
         message: "You are not a member of this group",
       });
     }
 
-    const isUserAdmin = group.admins.some((a) => String(a) === String(userId));
+    const isUserAdmin = isAdmin(group, userId);
 
     // Handle sole administrator condition
     if (isUserAdmin && group.admins.length === 1) {
@@ -506,8 +514,7 @@ const updateGroup = async (req, res) => {
     }
 
     // Only admin can update group
-    const isAdmin = group.admins.some((a) => String(a) === String(userId));
-    if (!isAdmin) {
+    if (!isAdmin(group, userId)) {
       return res.status(403).json({
         message: "Only group administrators can update group details",
       });
@@ -549,10 +556,7 @@ const updateGroup = async (req, res) => {
 
     await group.save();
 
-    const populatedGroup = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const populatedGroup = await populateGroup(Group.findById(groupId));
 
     try {
       getIO().to(`group:${groupId}`).emit("group:updated", {
@@ -596,8 +600,7 @@ const deleteGroup = async (req, res) => {
 
     // Only creator or admin can delete
     const isAuthorized =
-      String(group.creator) === String(userId) ||
-      group.admins.some((a) => String(a) === String(userId));
+      String(group.creator) === String(userId) || isAdmin(group, userId);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -653,30 +656,24 @@ const promoteAdmin = async (req, res) => {
       });
     }
 
-    const isRequesterAdmin = group.admins.some((a) => String(a) === String(requesterId));
-    if (!isRequesterAdmin) {
+    if (!isAdmin(group, requesterId)) {
       return res.status(403).json({
         message: "Only group administrators can promote members to admin",
       });
     }
 
-    const isTargetMember = group.members.some((m) => String(m) === String(targetUserId));
-    if (!isTargetMember) {
+    if (!isMember(group, targetUserId)) {
       return res.status(400).json({
         message: "User must be a member of the group to be promoted",
       });
     }
 
-    const isAlreadyAdmin = group.admins.some((a) => String(a) === String(targetUserId));
-    if (!isAlreadyAdmin) {
+    if (!isAdmin(group, targetUserId)) {
       group.admins.push(targetUserId);
       await group.save();
     }
 
-    const populatedGroup = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const populatedGroup = await populateGroup(Group.findById(groupId));
 
     try {
       getIO().to(`group:${groupId}`).emit("group:updated", {
@@ -718,8 +715,7 @@ const demoteAdmin = async (req, res) => {
       });
     }
 
-    const isRequesterAdmin = group.admins.some((a) => String(a) === String(requesterId));
-    if (!isRequesterAdmin) {
+    if (!isAdmin(group, requesterId)) {
       return res.status(403).json({
         message: "Only group administrators can demote administrators",
       });
@@ -740,10 +736,7 @@ const demoteAdmin = async (req, res) => {
     group.admins = group.admins.filter((a) => String(a) !== String(targetUserId));
     await group.save();
 
-    const populatedGroup = await Group.findById(groupId)
-      .populate("creator", "_id username email")
-      .populate("admins", "_id username email")
-      .populate("members", "_id username email");
+    const populatedGroup = await populateGroup(Group.findById(groupId));
 
     try {
       getIO().to(`group:${groupId}`).emit("group:updated", {
@@ -786,8 +779,7 @@ const sendGroupMessage = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -882,8 +874,7 @@ const getGroupMessages = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -1006,8 +997,7 @@ const editGroupMessage = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -1105,8 +1095,7 @@ const deleteGroupMessage = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -1125,9 +1114,7 @@ const deleteGroupMessage = async (req, res) => {
 
     // Only original sender or group admin can delete
     const isSender = String(message.sender) === String(userId);
-    const isAdmin = group.admins.some((a) => String(a) === String(userId));
-
-    if (!isSender && !isAdmin) {
+    if (!isSender && !isAdmin(group, userId)) {
       return res.status(403).json({
         message: "You are not authorized to delete this message",
       });
@@ -1196,8 +1183,7 @@ const uploadAndSendGroupMessage = async (req, res) => {
       });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -1277,8 +1263,7 @@ const downloadGroupAttachment = async (req, res) => {
       return res.status(404).json({ message: "Group not found" });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
@@ -1347,8 +1332,7 @@ const viewGroupAttachment = async (req, res) => {
       return res.status(404).json({ message: "Group not found" });
     }
 
-    const isMember = group.members.some((m) => String(m) === String(userId));
-    if (!isMember) {
+    if (!isMember(group, userId)) {
       return res.status(403).json({
         message: "Access denied. You are not a member of this group",
       });
