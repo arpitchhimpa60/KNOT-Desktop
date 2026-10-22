@@ -52,9 +52,9 @@ function App() {
   const [appVersion, setAppVersion] = useState("");
   const [platform, setPlatform] = useState("");
 
-  // Dark / Light Theme state (persisted and synced via IPC)
+  // Dark / Light Theme state (persisted and synced via IPC) - default light for nature theme
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("knotTheme") || "dark";
+    return localStorage.getItem("knotTheme") || "light";
   });
 
   // Apply data-theme attribute on document root
@@ -635,7 +635,17 @@ function App() {
     return (
       <div className="app-shell">
         <header className="knot-window-bar">
-          <span className="knot-window-title">KNOT</span>
+          <div className="knot-window-left">
+            <div className="mac-traffic-dots">
+              <button type="button" className="mac-dot mac-dot-close" onClick={handleQuit} title="Quit KNOT" aria-label="Quit" />
+              <button type="button" className="mac-dot mac-dot-minimize" onClick={handleMinimize} title="Minimize" aria-label="Minimize" />
+              <button type="button" className="mac-dot mac-dot-maximize" onClick={handleToggleMaximize} title="Maximize" aria-label="Maximize" />
+            </div>
+            <div className="knot-window-brand">
+              <img src="/knot-logo.svg" alt="" className="knot-bar-leaf-icon" width="16" height="16" />
+              <span className="knot-window-title">KNOT</span>
+            </div>
+          </div>
 
           <div className="knot-window-controls">
             <button
@@ -646,36 +656,6 @@ function App() {
               aria-label="Toggle dark/light theme"
             >
               {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
-            </button>
-
-            <button
-              type="button"
-              className="knot-window-button"
-              aria-label="Minimize KNOT"
-              title="Minimize"
-              onClick={handleMinimize}
-            >
-              −
-            </button>
-
-            <button
-              type="button"
-              className="knot-window-button"
-              aria-label={isMaximized ? "Restore KNOT" : "Maximize KNOT"}
-              title={isMaximized ? "Restore" : "Maximize"}
-              onClick={handleToggleMaximize}
-            >
-              {isMaximized ? "❐" : "□"}
-            </button>
-
-            <button
-              type="button"
-              className="knot-window-button quit"
-              aria-label="Quit KNOT"
-              title="Quit"
-              onClick={handleQuit}
-            >
-              ×
             </button>
           </div>
         </header>
@@ -692,7 +672,17 @@ function App() {
   return (
     <div className="app-shell">
       <header className="knot-window-bar">
-        <span className="knot-window-title">KNOT</span>
+        <div className="knot-window-left">
+          <div className="mac-traffic-dots">
+            <button type="button" className="mac-dot mac-dot-close" onClick={handleQuit} title="Quit KNOT" aria-label="Quit" />
+            <button type="button" className="mac-dot mac-dot-minimize" onClick={handleMinimize} title="Minimize" aria-label="Minimize" />
+            <button type="button" className="mac-dot mac-dot-maximize" onClick={handleToggleMaximize} title="Maximize" aria-label="Maximize" />
+          </div>
+          <div className="knot-window-brand">
+            <img src="/knot-logo.svg" alt="" className="knot-bar-leaf-icon" width="16" height="16" />
+            <span className="knot-window-title">KNOT</span>
+          </div>
+        </div>
 
         <div className="knot-window-controls">
           <button
@@ -703,36 +693,6 @@ function App() {
             aria-label="Toggle dark/light theme"
           >
             {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
-          </button>
-
-          <button
-            type="button"
-            className="knot-window-button"
-            aria-label="Minimize KNOT"
-            title="Minimize"
-            onClick={handleMinimize}
-          >
-            −
-          </button>
-
-          <button
-            type="button"
-            className="knot-window-button"
-            aria-label={isMaximized ? "Restore KNOT" : "Maximize KNOT"}
-            title={isMaximized ? "Restore" : "Maximize"}
-            onClick={handleToggleMaximize}
-          >
-            {isMaximized ? "❐" : "□"}
-          </button>
-
-          <button
-            type="button"
-            className="knot-window-button quit"
-            aria-label="Quit KNOT"
-            title="Quit"
-            onClick={handleQuit}
-          >
-            ×
           </button>
         </div>
       </header>

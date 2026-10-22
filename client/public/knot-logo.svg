@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="knotLeafCenter" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38c160" />
+      <stop offset="100%" stop-color="#176B38" />
+    </linearGradient>
+    <linearGradient id="knotLeafLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2FA84F" />
+      <stop offset="100%" stop-color="#14582d" />
+    </linearGradient>
+    <linearGradient id="knotLeafRight" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#48bb78" />
+      <stop offset="100%" stop-color="#1b723a" />
+    </linearGradient>
+  </defs>
+
+  <!-- Center Leaf -->
+  <path d="M32 6 C32 6 39 16 39 28 C39 36 35 41 32 43 C29 41 25 36 25 28 C25 16 32 6 32 6 Z" fill="url(#knotLeafCenter)" />
+  <path d="M32 10 L32 41" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.3" stroke-linecap="round" />
+
+  <!-- Left Leaf -->
+  <path d="M30 38 C28 32 20 22 10 21 C8 21 7 23 9 26 C13 32 21 38 29 40 C30 40 30 39 30 38 Z" fill="url(#knotLeafLeft)" />
+  <path d="M12 23 Q 22 29 29 39" stroke="#ffffff" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round" />
+
+  <!-- Right Leaf -->
+  <path d="M34 38 C36 32 44 22 54 21 C56 21 57 23 55 26 C51 32 43 38 35 40 C34 40 34 39 34 38 Z" fill="url(#knotLeafRight)" />
+  <path d="M52 23 Q 42 29 35 39" stroke="#ffffff" stroke-width="1" stroke-opacity="0.3" stroke-linecap="round" />
+
+  <!-- Small stem base -->
+  <path d="M32 42 L32 50" stroke="#176B38" stroke-width="2.5" stroke-linecap="round" />
+</svg>

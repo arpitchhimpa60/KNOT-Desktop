@@ -114,7 +114,7 @@ function CreateGroupModal({ isOpen, onClose, onGroupCreated, token, currentUser 
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card create-group-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Create New Group</h2>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
@@ -125,97 +125,110 @@ function CreateGroupModal({ isOpen, onClose, onGroupCreated, token, currentUser 
         {error && <p className="modal-error">{error}</p>}
 
         <form onSubmit={handleSubmit} className="create-group-form">
-          <label>
-            Group Name <span className="required-star">*</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Design Team, Project Alpha"
-              maxLength={100}
-              required
-              autoFocus
-              disabled={submitting}
-            />
-          </label>
+          <div className="modal-body create-group-body">
+            <div className="form-group">
+              <label htmlFor="group-name-input" className="modal-form-label">
+                Group Name <span className="required-star">*</span>
+              </label>
+              <input
+                id="group-name-input"
+                type="text"
+                className="modal-form-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Design Team, Project Alpha"
+                maxLength={100}
+                required
+                autoFocus
+                disabled={submitting}
+              />
+            </div>
 
-          <label>
-            Description <span className="optional-tag">(optional)</span>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What is this group about?"
-              maxLength={500}
-              disabled={submitting}
-            />
-          </label>
+            <div className="form-group">
+              <label htmlFor="group-desc-input" className="modal-form-label">
+                Description <span className="optional-tag">(optional)</span>
+              </label>
+              <input
+                id="group-desc-input"
+                type="text"
+                className="modal-form-input"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What is this group about?"
+                maxLength={500}
+                disabled={submitting}
+              />
+            </div>
 
-          <div className="members-selection-section">
-            <label>
-              Add Members <span className="optional-tag">(you are automatically added)</span>
-            </label>
+            <div className="form-group members-selection-section">
+              <label htmlFor="group-search-input" className="modal-form-label">
+                Add Members <span className="optional-tag">(you are automatically added)</span>
+              </label>
 
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search people by username or email..."
-              disabled={submitting}
-            />
+              <input
+                id="group-search-input"
+                type="text"
+                className="modal-form-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search people by username or email..."
+                disabled={submitting}
+              />
 
-            {/* Selected Members Chips */}
-            {selectedMembers.length > 0 && (
-              <div className="selected-chips-container">
-                {selectedMembers.map((member) => (
-                  <span key={member._id} className="member-chip">
-                    <span className="chip-name">{member.username}</span>
-                    <button
-                      type="button"
-                      className="chip-remove-btn"
-                      onClick={() => handleRemoveMember(member._id)}
-                      disabled={submitting}
-                      title={`Remove ${member.username}`}
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Search Dropdown / List */}
-            {searchQuery.trim().length >= 2 && (
-              <div className="modal-user-search-results">
-                {searching ? (
-                  <p className="search-hint">Searching...</p>
-                ) : searchResults.length === 0 ? (
-                  <p className="search-hint">No matching users found.</p>
-                ) : (
-                  searchResults.map((user) => (
-                    <div
-                      key={user._id}
-                      className="modal-user-result-item"
-                      onClick={() => handleSelectMember(user)}
-                    >
-                      <div className="avatar small">
-                        {(user.username || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div className="user-info">
-                        <strong>{user.username}</strong>
-                        <span>{user.email}</span>
-                      </div>
-                      <button type="button" className="add-member-btn">
-                        + Add
+              {/* Selected Members Chips */}
+              {selectedMembers.length > 0 && (
+                <div className="selected-chips-container">
+                  {selectedMembers.map((member) => (
+                    <span key={member._id} className="member-chip">
+                      <span className="chip-name">{member.username}</span>
+                      <button
+                        type="button"
+                        className="chip-remove-btn"
+                        onClick={() => handleRemoveMember(member._id)}
+                        disabled={submitting}
+                        title={`Remove ${member.username}`}
+                        aria-label={`Remove ${member.username}`}
+                      >
+                        ✕
                       </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Search Dropdown / List */}
+              {searchQuery.trim().length >= 2 && (
+                <div className="modal-user-search-results">
+                  {searching ? (
+                    <p className="search-hint">Searching...</p>
+                  ) : searchResults.length === 0 ? (
+                    <p className="search-hint">No matching users found.</p>
+                  ) : (
+                    searchResults.map((user) => (
+                      <div
+                        key={user._id}
+                        className="modal-user-result-item"
+                        onClick={() => handleSelectMember(user)}
+                      >
+                        <div className="avatar small">
+                          {(user.username || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="user-info">
+                          <strong>{user.username}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                        <button type="button" className="add-member-btn">
+                          + Add
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="modal-actions">
+          <div className="modal-footer">
             <button
               type="button"
               className="modal-cancel-btn"

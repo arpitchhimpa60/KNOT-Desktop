@@ -230,31 +230,18 @@ function MessageInput({
           aria-label="File upload input"
         />
 
-        <div className="composer-action-buttons">
-          <button
-            type="button"
-            className="composer-icon-button attachment-button"
-            onClick={handleOpenAttachmentPicker}
-            disabled={!recipientId || sending}
-            title="Attach file (images, PDFs, documents, archives)"
-            aria-label="Attach file"
-          >
-            📎
-          </button>
-
-          <button
-            type="button"
-            className={`composer-icon-button emoji-toggle-button ${
-              showEmojiPicker ? "active" : ""
-            }`}
-            onClick={() => setShowEmojiPicker((prev) => !prev)}
-            disabled={!recipientId || sending}
-            title="Insert emoji"
-            aria-label="Insert emoji"
-          >
-            😊
-          </button>
-        </div>
+        <button
+          type="button"
+          className="composer-icon-button attachment-button"
+          onClick={handleOpenAttachmentPicker}
+          disabled={!recipientId || sending}
+          title="Attach file (images, PDFs, documents, archives)"
+          aria-label="Attach file"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
 
         <input
           ref={inputRef}
@@ -270,15 +257,36 @@ function MessageInput({
         />
 
         <button
+          type="button"
+          className={`composer-icon-button emoji-toggle-button ${
+            showEmojiPicker ? "active" : ""
+          }`}
+          onClick={() => setShowEmojiPicker((prev) => !prev)}
+          disabled={!recipientId || sending}
+          title="Insert emoji"
+          aria-label="Insert emoji"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+            <line x1="9" y1="9" x2="9.01" y2="9" />
+            <line x1="15" y1="9" x2="15.01" y2="9" />
+          </svg>
+        </button>
+
+        <button
           type="submit"
           className="composer-send-button"
           disabled={!recipientId || !hasContentToSend || sending}
           aria-label="Send message"
+          title="Send message"
         >
           {sending ? (
             <span className="sending-spinner">...</span>
           ) : (
-            <span className="send-text">Send</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
           )}
         </button>
       </form>

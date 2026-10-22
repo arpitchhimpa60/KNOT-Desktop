@@ -634,8 +634,11 @@ function GroupChatWindow({
   if (!selectedGroup) {
     return (
       <main className="chat-empty">
-        <div className="empty-icon">👥</div>
-        <h2>Select a group</h2>
+        <div className="empty-icon-wrapper">
+          <img src="/knot-logo.svg" alt="KNOT" className="empty-leaf-logo" width="56" height="56" />
+        </div>
+        <h1 className="empty-brand">KNOT</h1>
+        <h2>Select a group to get started</h2>
         <p>Choose a group from the sidebar to start chatting.</p>
       </main>
     );
@@ -654,27 +657,51 @@ function GroupChatWindow({
     <main className="chat-window">
       {/* Group Header */}
       <header className="chat-header group-chat-header">
-        <div className="avatar large group-avatar-display">
+        <div
+          className="avatar large group-avatar-display clickable"
+          onClick={() => setIsInfoOpen(true)}
+          title="Click to view group details"
+        >
           {(selectedGroup.name || "G").charAt(0).toUpperCase()}
         </div>
 
-        <div className="group-header-info">
+        <div
+          className="chat-header-info clickable"
+          onClick={() => setIsInfoOpen(true)}
+          title="Click to view group details"
+        >
           <h2>{selectedGroup.name}</h2>
-          <span className="group-meta-subtitle">
-            {selectedGroup.members?.length || 1} member
+          <span className="chat-status online">
+            ● {selectedGroup.members?.length || 1} member
             {(selectedGroup.members?.length || 1) !== 1 ? "s" : ""}
             {selectedGroup.description ? ` • ${selectedGroup.description}` : ""}
           </span>
         </div>
 
-        <button
-          type="button"
-          className="group-info-toggle-btn"
-          onClick={() => setIsInfoOpen(true)}
-          title="View Group Details"
-        >
-          ℹ Group Info
-        </button>
+        <div className="chat-header-actions">
+          <button
+            type="button"
+            className="contact-info-toggle-btn"
+            onClick={() => setIsInfoOpen(true)}
+            title="View group details"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span className="contact-info-btn-text">Group Info</span>
+          </button>
+        </div>
       </header>
 
       {/* Messages Section */}
@@ -761,7 +788,10 @@ function GroupChatWindow({
               message.attachment.originalName
             );
           const isFileAttachment = hasAttachment && !isImage;
-          const isAttachmentOnly = isFileAttachment && !message.text;
+          const prevSenderId = prevMessage
+            ? String(prevMessage.sender?._id ?? prevMessage.sender)
+            : null;
+          const isConsecutive = !showDateSeparator && prevSenderId === senderId;
 
           return (
             <Fragment key={message._id}>
@@ -771,7 +801,9 @@ function GroupChatWindow({
 
               <div
                 id={`msg-${message._id}`}
-                className={`message-row ${mine ? "mine" : ""}`}
+                className={`message-row ${mine ? "mine" : ""} ${
+                  isConsecutive ? "consecutive-message" : "new-sender-message"
+                }`}
               >
               <div className="message-bubble-wrapper">
                 <div
@@ -786,7 +818,7 @@ function GroupChatWindow({
                   }`}
                 >
                   {/* Sender Attribution for other members in group */}
-                  {!mine && (
+                  {!mine && !isConsecutive && (
                     <strong className="group-sender-name">{senderName}</strong>
                   )}
 
