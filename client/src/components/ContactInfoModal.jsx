@@ -5,6 +5,7 @@ function formatMemberDate(dateStr) {
   if (!dateStr) return "Recently";
   try {
     const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "Recently";
     return d.toLocaleDateString(undefined, {
       month: "long",
       year: "numeric",
@@ -23,27 +24,24 @@ function ContactInfoModal({
   onStartChat,
 }) {
   const [profileData, setProfileData] = useState(user);
-  const [loading, setLoading] = useState(false);
 
+  // Sync profile data when opening modal or user prop changes, and fetch fresh details from server
   useEffect(() => {
     if (!isOpen || !user?._id) return;
 
     setProfileData(user);
 
     let cancelled = false;
+
     async function loadFreshProfile() {
       if (!token) return;
       try {
-        setLoading(true);
         const fresh = await getUserProfile(token, user._id);
         if (!cancelled && fresh) {
           setProfileData(fresh);
         }
       } catch (err) {
-        // Fall back gracefully to existing user props
         console.warn("Could not load full contact profile:", err);
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
 
@@ -56,12 +54,13 @@ function ContactInfoModal({
 
   if (!isOpen || !user) return null;
 
-  const username = profileData?.username || user.username || "User";
-  const email = profileData?.email || user.email || "";
-  const bio = profileData?.bio || user.bio || "Hey there! I am using KNOT.";
-  const avatarUrl = getAvatarUrl(profileData?.profilePhoto || user.profilePhoto);
+  const displayUser = profileData || user;
+  const username = displayUser.username || "User";
+  const email = displayUser.email || "";
+  const bio = displayUser.bio || "Hey there! I am using KNOT.";
+  const avatarUrl = getAvatarUrl(displayUser.profilePhoto);
   const initials = username.charAt(0).toUpperCase();
-  const joinedDate = formatMemberDate(profileData?.createdAt || user.createdAt);
+  const joinedDate = formatMemberDate(displayUser.createdAt);
 
   return (
     <div
@@ -147,7 +146,7 @@ function ContactInfoModal({
                 type="button"
                 className="contact-action-btn primary"
                 onClick={() => {
-                  onStartChat(profileData || user);
+                  onStartChat(displayUser);
                   onClose();
                 }}
               >

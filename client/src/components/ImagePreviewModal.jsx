@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 
 function ImagePreviewModal({
   isOpen,
@@ -21,21 +21,19 @@ function ImagePreviewModal({
     }
   }, [isOpen, src]);
 
-  // Handle ESC key to close
-  const handleKeyDown = useCallback(
-    (e) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    },
-    [onClose]
-  );
-
+  // Handle ESC key to close modal
   useEffect(() => {
     if (!isOpen) return;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, handleKeyDown]);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !src) return null;
 

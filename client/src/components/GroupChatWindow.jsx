@@ -16,6 +16,23 @@ import {
 import FileAttachmentCard from "./FileAttachmentCard";
 import { formatFileSize, isImageMimeOrExt } from "../utils/fileUtils";
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function getReplyPreviewText(originalMessage) {
+  if (!originalMessage) {
+    return "Message preview unavailable";
+  }
+  if (originalMessage.deleted) {
+    return "This message was deleted";
+  }
+  if (originalMessage.attachment?.originalName) {
+    return originalMessage.text
+      ? `📎 ${originalMessage.attachment.originalName} — ${originalMessage.text}`
+      : `📎 ${originalMessage.attachment.originalName}`;
+  }
+  return originalMessage.text || "Message";
+}
+
 function scrollToMessageElement(element, container) {
   if (!element || !container) return;
   const containerRect = container.getBoundingClientRect();
@@ -129,7 +146,6 @@ function GroupChatWindow({
   const typingTimeoutRef = useRef(null);
 
   const currentUserId = String(currentUser?._id);
-  const groupId = String(selectedGroup?._id);
 
   const isAdmin = Boolean(
     selectedGroup?.admins?.some((a) => String(a._id ?? a) === currentUserId)
@@ -465,7 +481,7 @@ function GroupChatWindow({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       setActionError("File exceeds the 10 MB size limit.");
       event.target.value = "";
       return;
@@ -788,6 +804,7 @@ function GroupChatWindow({
               message.attachment.originalName
             );
           const isFileAttachment = hasAttachment && !isImage;
+          const isAttachmentOnly = isFileAttachment && !message.text;
           const prevSenderId = prevMessage
             ? String(prevMessage.sender?._id ?? prevMessage.sender)
             : null;
@@ -844,17 +861,7 @@ function GroupChatWindow({
                       <strong>
                         {originalMessage ? originalSenderName : "Original message"}
                       </strong>
-                      <p>
-                        {originalMessage
-                          ? (originalMessage.deleted
-                              ? "This message was deleted"
-                              : originalMessage.attachment?.originalName
-                                ? (originalMessage.text
-                                    ? `📎 ${originalMessage.attachment.originalName} — ${originalMessage.text}`
-                                    : `📎 ${originalMessage.attachment.originalName}`)
-                                : originalMessage.text || "Message")
-                          : "Message preview unavailable"}
-                      </p>
+                      <p>{getReplyPreviewText(originalMessage)}</p>
                     </div>
                   )}
 
@@ -896,13 +903,8 @@ function GroupChatWindow({
                     </form>
                   ) : (
                     <>
-                      {message.attachment &&
-                        message.attachment.fileName &&
-                        !isDeleted &&
-                        (isImageMimeOrExt(
-                          message.attachment.mimeType,
-                          message.attachment.originalName
-                        ) ? (
+                      {hasAttachment &&
+                        (isImage ? (
                           <div
                             className="message-attachment-image-wrap"
                             onClick={() => handleOpenImagePreview(message)}
@@ -1066,15 +1068,7 @@ function GroupChatWindow({
                   ? "yourself"
                   : replyingTo.sender?.username || "message"}
               </strong>
-              <p>
-                {replyingTo.text
-                  ? (replyingTo.attachment?.originalName
-                      ? `📎 ${replyingTo.attachment.originalName} — ${replyingTo.text}`
-                      : replyingTo.text)
-                  : (replyingTo.attachment?.originalName
-                      ? `📎 ${replyingTo.attachment.originalName}`
-                      : "Message")}
-              </p>
+              <p>{getReplyPreviewText(replyingTo)}</p>
             </div>
             <button
               type="button"

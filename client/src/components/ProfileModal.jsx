@@ -99,13 +99,13 @@ function ProfileModal({
       // 1. If user removed their photo
       if (!selectedFile && !currentPhoto && currentUser.profilePhoto) {
         const res = await removeAvatar(token);
-        updatedUser = res.user || updatedUser;
+        updatedUser = res?.user || res || updatedUser;
       }
 
       // 2. If user picked a new photo file
       if (selectedFile) {
         const res = await uploadAvatar(token, selectedFile);
-        updatedUser = res.user || updatedUser;
+        updatedUser = res?.user || res || updatedUser;
       }
 
       // 3. Update username and bio
@@ -114,7 +114,7 @@ function ProfileModal({
         bio: bio.trim(),
       });
 
-      updatedUser = profileRes || updatedUser;
+      updatedUser = profileRes?.user || profileRes || updatedUser;
 
       setSuccessMsg("Profile updated successfully!");
       if (onProfileUpdated) {
@@ -139,7 +139,7 @@ function ProfileModal({
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      onClick={saving ? undefined : onClose}
       role="dialog"
       aria-modal="true"
     >
@@ -152,7 +152,8 @@ function ProfileModal({
           <button
             type="button"
             className="modal-close-btn"
-            onClick={onClose}
+            onClick={saving ? undefined : onClose}
+            disabled={saving}
             aria-label="Close"
           >
             ✕
@@ -203,7 +204,7 @@ function ProfileModal({
                 Upload Photo
               </button>
 
-              {(effectiveAvatar || currentPhoto) && (
+              {effectiveAvatar && (
                 <button
                   type="button"
                   className="dp-action-btn remove"

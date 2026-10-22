@@ -19,6 +19,21 @@ import {
 import FileAttachmentCard from "./FileAttachmentCard";
 import { formatFileSize, isImageMimeOrExt } from "../utils/fileUtils";
 
+function getReplyPreviewText(originalMessage) {
+  if (!originalMessage) {
+    return "Message preview unavailable";
+  }
+  if (originalMessage.deleted) {
+    return "This message was deleted";
+  }
+  if (originalMessage.attachment?.originalName) {
+    return originalMessage.text
+      ? `📎 ${originalMessage.attachment.originalName} — ${originalMessage.text}`
+      : `📎 ${originalMessage.attachment.originalName}`;
+  }
+  return originalMessage.text || "Message";
+}
+
 function scrollToMessageElement(element, container) {
   if (!element || !container) return;
   const containerRect = container.getBoundingClientRect();
@@ -556,6 +571,12 @@ function ChatWindow({
     selectedUser?._id && onlineUserIds.includes(String(selectedUser._id))
   );
 
+  function handleOpenContact() {
+    if (onOpenContactInfo && selectedUser) {
+      onOpenContactInfo(selectedUser);
+    }
+  }
+
   if (!selectedUser) {
     return (
       <main className="chat-empty">
@@ -576,7 +597,7 @@ function ChatWindow({
       <header className="chat-header">
         <div
           className="avatar large chat-header-avatar clickable"
-          onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+          onClick={handleOpenContact}
           title="Click to view contact info"
         >
           {userAvatar ? (
@@ -593,7 +614,7 @@ function ChatWindow({
 
         <div
           className="chat-header-info clickable"
-          onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+          onClick={handleOpenContact}
           title="Click to view contact info"
         >
           <h2>{selectedUser.username}</h2>
@@ -606,7 +627,7 @@ function ChatWindow({
           <button
             type="button"
             className="contact-info-toggle-btn"
-            onClick={() => onOpenContactInfo && onOpenContactInfo(selectedUser)}
+            onClick={handleOpenContact}
             title="View contact details"
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -762,17 +783,7 @@ function ChatWindow({
                           ? originalSenderName
                           : "Original message"}
                       </strong>
-                      <p>
-                        {originalMessage
-                          ? (originalMessage.deleted
-                              ? "This message was deleted"
-                              : originalMessage.attachment?.originalName
-                                ? (originalMessage.text
-                                    ? `📎 ${originalMessage.attachment.originalName} — ${originalMessage.text}`
-                                    : `📎 ${originalMessage.attachment.originalName}`)
-                                : originalMessage.text || "Message")
-                          : "Message preview unavailable"}
-                      </p>
+                      <p>{getReplyPreviewText(originalMessage)}</p>
                     </div>
                   )}
 
@@ -815,13 +826,8 @@ function ChatWindow({
                     </form>
                   ) : (
                     <>
-                      {message.attachment &&
-                        message.attachment.fileName &&
-                        !isDeleted &&
-                        (isImageMimeOrExt(
-                          message.attachment.mimeType,
-                          message.attachment.originalName
-                        ) ? (
+                      {hasAttachment &&
+                        (isImage ? (
                           <div
                             className="message-attachment-image-wrap"
                             onClick={() => handleOpenImagePreview(message)}

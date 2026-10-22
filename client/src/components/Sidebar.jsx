@@ -1,9 +1,32 @@
 import { useEffect, useState, useRef } from "react";
 import { searchUsers, getAvatarUrl } from "../api";
-import { formatConversationTime } from "../utils/dateUtils";
+import { formatConversationTime as formatTime } from "../utils/dateUtils";
 
-function formatTime(timestamp) {
-  return formatConversationTime(timestamp);
+function getRequestPreviewText(req) {
+  return (
+    req.lastMessage?.text ||
+    (req.lastMessage?.attachment?.originalName
+      ? `📎 ${req.lastMessage.attachment.originalName}`
+      : "Sent you a message")
+  );
+}
+
+function getGroupPreviewText(group, currentUserId) {
+  const lastMsg = group.lastMessage;
+  if (!lastMsg) {
+    return group.description || "No messages yet";
+  }
+
+  const senderId = String(lastMsg.sender?._id ?? lastMsg.sender);
+  const isMine = senderId === String(currentUserId);
+  const senderPrefix = isMine ? "You" : lastMsg.sender?.username || "Someone";
+  const contentBody =
+    lastMsg.text ||
+    (lastMsg.attachment?.originalName
+      ? `📎 ${lastMsg.attachment.originalName}`
+      : "");
+
+  return `${senderPrefix}: ${contentBody}`;
 }
 
 function KnotSmallLogo() {
@@ -490,10 +513,7 @@ function Sidebar({
 
                             <div className="conversation-subtitle-row">
                               <span className="conversation-preview-text request-preview">
-                                {req.lastMessage?.text ||
-                                  (req.lastMessage?.attachment?.originalName
-                                    ? `📎 ${req.lastMessage.attachment.originalName}`
-                                    : "Sent you a message")}
+                                {getRequestPreviewText(req)}
                               </span>
                               {req.unreadCount > 0 && (
                                 <span className="unread-count-pill request-pill">
@@ -617,14 +637,14 @@ function Sidebar({
                                   {status === "sent" ? "✓" : "✓✓"}
                                 </span>
                               )}
-                              {isMine && !isDeleted ? (
+                              {isMine && !isDeleted && (
                                 <span className="preview-sender">You: </span>
-                              ) : null}
-                              {hasAttachment && !isDeleted ? (
+                              )}
+                              {hasAttachment && !isDeleted && (
                                 <span className="preview-attachment-indicator">
                                   📎{" "}
                                 </span>
-                              ) : null}
+                              )}
                               <span className="preview-message-body">
                                 {isDeleted
                                   ? "This message was deleted"
@@ -681,21 +701,10 @@ function Sidebar({
                     groups.map((group) => {
                       const isSelected =
                         String(selectedGroup?._id) === String(group._id);
-                      const lastMsg = group.lastMessage;
-                      const senderPrefix = lastMsg
-                        ? String(lastMsg.sender?._id ?? lastMsg.sender) ===
-                          String(currentUser?._id)
-                          ? "You"
-                          : lastMsg.sender?.username || "Someone"
-                        : "";
-                      const contentBody =
-                        lastMsg?.text ||
-                        (lastMsg?.attachment?.originalName
-                          ? `📎 ${lastMsg.attachment.originalName}`
-                          : "");
-                      const lastMsgText = lastMsg
-                        ? `${senderPrefix}: ${contentBody}`
-                        : group.description || "No messages yet";
+                      const lastMsgText = getGroupPreviewText(
+                        group,
+                        currentUser?._id
+                      );
 
                       return (
                         <button

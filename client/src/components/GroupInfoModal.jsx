@@ -154,6 +154,31 @@ function GroupInfoModal({
     }
   }
 
+  function handleCancelEdit() {
+    setName(activeGroup?.name || "");
+    setDescription(activeGroup?.description || "");
+    setIsEditing(false);
+  }
+
+  function handleCloseAddMembers() {
+    setShowAddMembers(false);
+    setSelectedToAdd([]);
+    setSearchQuery("");
+  }
+
+  function handleSelectUserToAdd(user) {
+    setSelectedToAdd((prev) =>
+      prev.some((u) => String(u._id) === String(user._id))
+        ? prev
+        : [...prev, user]
+    );
+    setSearchQuery("");
+  }
+
+  function handleRemoveUserToAdd(userId) {
+    setSelectedToAdd((prev) => prev.filter((u) => String(u._id) !== String(userId)));
+  }
+
   async function handleAddMembersSubmit() {
     if (selectedToAdd.length === 0) return;
 
@@ -313,7 +338,7 @@ function GroupInfoModal({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setIsEditing(false)}
+                      onClick={handleCancelEdit}
                       disabled={savingEdit}
                       className="cancel-btn"
                     >
@@ -362,11 +387,7 @@ function GroupInfoModal({
                           <button
                             type="button"
                             className="chip-remove-btn"
-                            onClick={() =>
-                              setSelectedToAdd((prev) =>
-                                prev.filter((u) => String(u._id) !== String(user._id))
-                              )
-                            }
+                            onClick={() => handleRemoveUserToAdd(user._id)}
                             disabled={addingMembers}
                           >
                             ✕
@@ -387,13 +408,7 @@ function GroupInfoModal({
                           <div
                             key={user._id}
                             className="modal-user-result-item"
-                            onClick={() => {
-                              setSelectedToAdd((prev) => [...prev, user]);
-                              setSearchResults((prev) =>
-                                prev.filter((u) => String(u._id) !== String(user._id))
-                              );
-                              setSearchQuery("");
-                            }}
+                            onClick={() => handleSelectUserToAdd(user)}
                           >
                             <div className="avatar small">
                               {(user.username || "?").charAt(0).toUpperCase()}
@@ -423,11 +438,7 @@ function GroupInfoModal({
                     <button
                       type="button"
                       className="modal-cancel-btn compact"
-                      onClick={() => {
-                        setShowAddMembers(false);
-                        setSelectedToAdd([]);
-                        setSearchQuery("");
-                      }}
+                      onClick={handleCloseAddMembers}
                       disabled={addingMembers}
                     >
                       Cancel

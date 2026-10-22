@@ -2,13 +2,18 @@
 import { useState, useEffect, useRef } from "react";
 import EmojiPicker from "./EmojiPicker";
 import ImagePreviewModal from "./ImagePreviewModal";
+import { formatFileSize } from "../utils/fileUtils";
 
-function formatFileSize(bytes) {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function getReplyPreviewText(replyTo) {
+  if (!replyTo) return "";
+  if (replyTo.attachment?.originalName) {
+    return replyTo.text
+      ? `📎 ${replyTo.attachment.originalName} — ${replyTo.text}`
+      : `📎 ${replyTo.attachment.originalName}`;
+  }
+  return replyTo.text || "Message";
 }
 
 function MessageInput({
@@ -69,7 +74,7 @@ function MessageInput({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       setError("File exceeds the 10 MB size limit.");
       event.target.value = "";
       return;
@@ -152,15 +157,7 @@ function MessageInput({
         <div className="reply-composer">
           <div className="reply-composer-content">
             <strong>Replying to {replySenderName}</strong>
-            <p>
-              {replyTo.text
-                ? (replyTo.attachment?.originalName
-                    ? `📎 ${replyTo.attachment.originalName} — ${replyTo.text}`
-                    : replyTo.text)
-                : (replyTo.attachment?.originalName
-                    ? `📎 ${replyTo.attachment.originalName}`
-                    : "Message")}
-            </p>
+            <p>{getReplyPreviewText(replyTo)}</p>
           </div>
 
           <button

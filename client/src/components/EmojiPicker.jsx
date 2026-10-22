@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const EMOJI_CATEGORIES = [
   {
@@ -67,10 +67,9 @@ const EMOJI_CATEGORIES = [
 
 function EmojiPicker({ onSelectEmoji, onClose }) {
   const [activeCategory, setActiveCategory] = useState("popular");
-  const [searchTerm, setSearchTerm] = useState("");
   const pickerRef = useRef(null);
 
-  // Close on outside click
+  // Close on outside click or Escape key
   useEffect(() => {
     function handlePointerDown(event) {
       if (pickerRef.current && !pickerRef.current.contains(event.target)) {
@@ -93,19 +92,10 @@ function EmojiPicker({ onSelectEmoji, onClose }) {
     };
   }, [onClose]);
 
-  const displayedEmojis = useMemo(() => {
-    if (searchTerm.trim()) {
-      const q = searchTerm.trim().toLowerCase();
-      // Combine all categories and deduplicate
-      const all = Array.from(
-        new Set(EMOJI_CATEGORIES.flatMap((c) => c.emojis))
-      );
-      // If user typed an exact emoji or query, filter
-      return all;
-    }
-    const cat = EMOJI_CATEGORIES.find((c) => c.id === activeCategory);
-    return cat ? cat.emojis : EMOJI_CATEGORIES[0].emojis;
-  }, [activeCategory, searchTerm]);
+  // Find the selected category (defaults to popular)
+  const currentCategory =
+    EMOJI_CATEGORIES.find((cat) => cat.id === activeCategory) ||
+    EMOJI_CATEGORIES[0];
 
   return (
     <div
@@ -133,12 +123,9 @@ function EmojiPicker({ onSelectEmoji, onClose }) {
             key={cat.id}
             type="button"
             className={`emoji-cat-btn ${
-              activeCategory === cat.id && !searchTerm ? "active" : ""
+              activeCategory === cat.id ? "active" : ""
             }`}
-            onClick={() => {
-              setActiveCategory(cat.id);
-              setSearchTerm("");
-            }}
+            onClick={() => setActiveCategory(cat.id)}
             title={cat.name}
             aria-label={cat.name}
           >
@@ -148,14 +135,12 @@ function EmojiPicker({ onSelectEmoji, onClose }) {
       </div>
 
       <div className="emoji-grid">
-        {displayedEmojis.map((emoji, index) => (
+        {currentCategory.emojis.map((emoji, index) => (
           <button
             key={`${emoji}-${index}`}
             type="button"
             className="emoji-item-btn"
-            onClick={() => {
-              onSelectEmoji(emoji);
-            }}
+            onClick={() => onSelectEmoji(emoji)}
             aria-label={emoji}
           >
             {emoji}

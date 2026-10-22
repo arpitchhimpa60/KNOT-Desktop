@@ -11,7 +11,7 @@ function CreateGroupModal({ isOpen, onClose, onGroupCreated, token, currentUser 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Reset form when modal opens/closes
+  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setName("");
@@ -64,13 +64,12 @@ function CreateGroupModal({ isOpen, onClose, onGroupCreated, token, currentUser 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, token, currentUser, selectedMembers]);
+  }, [searchQuery, isOpen, token, currentUser?._id, selectedMembers]);
 
   if (!isOpen) return null;
 
   function handleSelectMember(user) {
     setSelectedMembers((prev) => [...prev, user]);
-    setSearchResults((prev) => prev.filter((u) => String(u._id) !== String(user._id)));
     setSearchQuery("");
   }
 
