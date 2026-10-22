@@ -1,4 +1,3 @@
-
 const path = require("path");
 const fs = require("fs");
 const jwt = require("jsonwebtoken");
@@ -8,8 +7,62 @@ const Message = require("../models/Messages");
 const { getIO } = require("../socket");
 const { UPLOADS_DIR } = require("../middleware/uploadMiddleware");
 
-// POST /api/messages
+/**
+ * Helper: Notify recipient and sender via Socket.IO after a new message is saved.
+ * Also detects first contact to emit conversation request notifications.
+ */
+async function notifyNewMessage(senderId, recipientId, message) {
+  let io;
+  try {
+    io = getIO();
+  } catch (ioErr) {
+    console.error("Socket.IO not initialized for message notification:", ioErr);
+    return;
+  }
 
+  // 1. Deliver the message to the recipient's personal room
+  try {
+    io.to(String(recipientId)).emit("new-message", message);
+  } catch (emitErr) {
+    console.error("Socket emit 'new-message' failed:", emitErr);
+  }
+
+  // 2. Update conversation lists in real-time and notify if first-contact request
+  try {
+    const priorCount = await Message.countDocuments({
+      $or: [
+        { sender: senderId, recipient: recipientId },
+        { sender: recipientId, recipient: senderId },
+      ],
+      _id: { $ne: message._id },
+    });
+
+    const isFirstContact = priorCount === 0;
+
+    if (isFirstContact) {
+      const senderUser = await User.findById(senderId).select("_id username email");
+      io.to(String(recipientId)).emit("conversation:request", {
+        message,
+        sender: senderUser,
+      });
+    }
+
+    io.to(String(recipientId)).emit("conversation:updated", {
+      userId: String(senderId),
+      lastMessage: message,
+      isFirstContact,
+    });
+
+    io.to(String(senderId)).emit("conversation:updated", {
+      userId: String(recipientId),
+      lastMessage: message,
+    });
+  } catch (convErr) {
+    console.error("Conversation socket notification failed:", convErr);
+  }
+}
+
+// POST /api/messages — send a direct text message
 const sendMessage = async (req, res) => {
   try {
     const senderId = req.user.userId;
@@ -34,7 +87,6 @@ const sendMessage = async (req, res) => {
     }
 
     const recipient = await User.findById(recipientId);
-
     if (!recipient) {
       return res.status(404).json({
         message: "Recipient not found",
@@ -42,7 +94,6 @@ const sendMessage = async (req, res) => {
     }
 
     let originalMessage = null;
-
     if (replyTo) {
       if (!mongoose.isValidObjectId(replyTo)) {
         return res.status(400).json({
@@ -78,42 +129,7 @@ const sendMessage = async (req, res) => {
 
     const message = await Message.create(messageData);
 
-    const io = getIO();
-
-    io.to(String(recipientId)).emit("new-message", message);
-
-    try {
-      const priorCount = await Message.countDocuments({
-        $or: [
-          { sender: senderId, recipient: recipientId },
-          { sender: recipientId, recipient: senderId },
-        ],
-        _id: { $ne: message._id },
-      });
-
-      const isFirstContact = priorCount === 0;
-      const senderUser = await User.findById(senderId).select("_id username email");
-
-      if (isFirstContact) {
-        io.to(String(recipientId)).emit("conversation:request", {
-          message,
-          sender: senderUser,
-        });
-      }
-
-      io.to(String(recipientId)).emit("conversation:updated", {
-        userId: String(senderId),
-        lastMessage: message,
-        isFirstContact,
-      });
-
-      io.to(String(senderId)).emit("conversation:updated", {
-        userId: String(recipientId),
-        lastMessage: message,
-      });
-    } catch (socketErr) {
-      console.error("Conversation socket notification failed:", socketErr);
-    }
+    await notifyNewMessage(senderId, recipientId, message);
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -121,15 +137,13 @@ const sendMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Send message error:", error);
-
     return res.status(500).json({
       message: "Could not send message",
     });
   }
 };
 
-
-// GET /api/messages/:userId
+// GET /api/messages/:userId — retrieve message history between two users
 const getChatHistory = async (req, res) => {
   try {
     const myId = req.user.userId;
@@ -141,25 +155,27 @@ const getChatHistory = async (req, res) => {
       });
     }
 
+    // Common filter matching messages between the two users in either direction
+    const conversationFilter = {
+      $or: [
+        { sender: myId, recipient: otherUserId },
+        { sender: otherUserId, recipient: myId },
+      ],
+    };
+
     const { targetMessageId } = req.query;
     let messages = null;
 
     if (targetMessageId && mongoose.isValidObjectId(targetMessageId)) {
       const target = await Message.findOne({
         _id: targetMessageId,
-        $or: [
-          { sender: myId, recipient: otherUserId },
-          { sender: otherUserId, recipient: myId },
-        ],
+        ...conversationFilter,
       });
 
       if (target) {
         // Fetch up to 20 messages before the target message
         const beforeMessages = await Message.find({
-          $or: [
-            { sender: myId, recipient: otherUserId },
-            { sender: otherUserId, recipient: myId },
-          ],
+          ...conversationFilter,
           createdAt: { $lt: target.createdAt },
         })
           .sort({ createdAt: -1 })
@@ -167,10 +183,7 @@ const getChatHistory = async (req, res) => {
 
         // Fetch up to 80 messages from target forward
         const afterMessages = await Message.find({
-          $or: [
-            { sender: myId, recipient: otherUserId },
-            { sender: otherUserId, recipient: myId },
-          ],
+          ...conversationFilter,
           createdAt: { $gte: target.createdAt },
         })
           .sort({ createdAt: 1 })
@@ -181,12 +194,7 @@ const getChatHistory = async (req, res) => {
     }
 
     if (!messages) {
-      messages = await Message.find({
-        $or: [
-          { sender: myId, recipient: otherUserId },
-          { sender: otherUserId, recipient: myId },
-        ],
-      })
+      messages = await Message.find(conversationFilter)
         .sort({ createdAt: 1 })
         .limit(100);
     }
@@ -197,14 +205,13 @@ const getChatHistory = async (req, res) => {
     });
   } catch (error) {
     console.error("Get chat history error:", error);
-
     return res.status(500).json({
       message: "Could not load messages",
     });
   }
 };
 
-// PATCH /api/messages/:messageId/delivered
+// PATCH /api/messages/:messageId/delivered — mark a single message as delivered
 const markMessageDelivered = async (req, res) => {
   try {
     const recipientId = req.user.userId;
@@ -228,7 +235,7 @@ const markMessageDelivered = async (req, res) => {
       { new: true }
     );
 
-    // If it was already delivered/read, do not downgrade its status.
+    // If it was already delivered or read, do not downgrade status
     if (!message) {
       const existingMessage = await Message.findOne({
         _id: messageId,
@@ -258,14 +265,13 @@ const markMessageDelivered = async (req, res) => {
     });
   } catch (error) {
     console.error("Mark delivered error:", error);
-
     return res.status(500).json({
       message: "Could not update message status",
     });
   }
 };
 
-// PATCH /api/messages/read
+// PATCH /api/messages/read — mark multiple messages as read
 const markMessagesRead = async (req, res) => {
   try {
     const recipientId = req.user.userId;
@@ -294,24 +300,20 @@ const markMessagesRead = async (req, res) => {
       }
     );
 
-    // Notify the sender so their message bubbles update.
+    // Notify the sender so their double blue ticks update in real-time
     if (result.modifiedCount > 0) {
-      getIO().to(String(senderId)).emit("messages-read", {
+      const io = getIO();
+      const sId = String(senderId);
+      const rId = String(recipientId);
+
+      io.to(sId).emit("messages-read", {
         messageIds: messageIds.map(String),
-        readerId: String(recipientId),
+        readerId: rId,
       });
 
-      getIO().to(String(senderId)).emit("conversation:updated", {
-        userId: String(recipientId),
-      });
-
-      getIO().to(String(recipientId)).emit("conversation:updated", {
-        userId: String(senderId),
-      });
-
-      getIO().to(String(recipientId)).emit("conversation:read", {
-        userId: String(senderId),
-      });
+      io.to(sId).emit("conversation:updated", { userId: rId });
+      io.to(rId).emit("conversation:updated", { userId: sId });
+      io.to(rId).emit("conversation:read", { userId: sId });
     }
 
     return res.status(200).json({
@@ -320,15 +322,13 @@ const markMessagesRead = async (req, res) => {
     });
   } catch (error) {
     console.error("Mark read error:", error);
-
     return res.status(500).json({
       message: "Could not mark messages as read",
     });
   }
 };
 
-
-
+// PATCH /api/messages/:messageId — edit an existing message sent by current user
 const editMessage = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -368,9 +368,12 @@ const editMessage = async (req, res) => {
       });
     }
 
-    getIO()
-      .to(String(message.recipient))
-      .to(String(message.sender))
+    const io = getIO();
+    const recipientStr = String(message.recipient);
+    const senderStr = String(message.sender);
+
+    io.to(recipientStr)
+      .to(senderStr)
       .emit("message-edited", {
         messageId: String(message._id),
         text: message.text,
@@ -378,12 +381,12 @@ const editMessage = async (req, res) => {
         updatedAt: message.updatedAt,
       });
 
-    getIO().to(String(message.recipient)).emit("conversation:updated", {
-      userId: String(message.sender),
+    io.to(recipientStr).emit("conversation:updated", {
+      userId: senderStr,
       lastMessage: message,
     });
-    getIO().to(String(message.sender)).emit("conversation:updated", {
-      userId: String(message.recipient),
+    io.to(senderStr).emit("conversation:updated", {
+      userId: recipientStr,
       lastMessage: message,
     });
 
@@ -393,13 +396,13 @@ const editMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Edit message error:", error);
-
     return res.status(500).json({
       message: "Could not edit message",
     });
   }
 };
 
+// DELETE /api/messages/:messageId — soft-delete a message sent by current user
 const deleteMessage = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -432,21 +435,24 @@ const deleteMessage = async (req, res) => {
       });
     }
 
-    getIO()
-      .to(String(message.recipient))
-      .to(String(message.sender))
+    const io = getIO();
+    const recipientStr = String(message.recipient);
+    const senderStr = String(message.sender);
+
+    io.to(recipientStr)
+      .to(senderStr)
       .emit("message-deleted", {
         messageId: String(message._id),
         text: message.text,
         deleted: message.deleted,
       });
 
-    getIO().to(String(message.recipient)).emit("conversation:updated", {
-      userId: String(message.sender),
+    io.to(recipientStr).emit("conversation:updated", {
+      userId: senderStr,
       lastMessage: message,
     });
-    getIO().to(String(message.sender)).emit("conversation:updated", {
-      userId: String(message.recipient),
+    io.to(senderStr).emit("conversation:updated", {
+      userId: recipientStr,
       lastMessage: message,
     });
 
@@ -456,7 +462,6 @@ const deleteMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete message error:", error);
-
     return res.status(500).json({
       message: "Could not delete message",
     });
@@ -527,44 +532,8 @@ const uploadAndSendMessage = async (req, res) => {
     }
 
     const message = await Message.create(messageData);
-    const io = getIO();
 
-    io.to(String(recipientId)).emit("new-message", message);
-
-    try {
-      const priorCount = await Message.countDocuments({
-        $or: [
-          { sender: senderId, recipient: recipientId },
-          { sender: recipientId, recipient: senderId },
-        ],
-        _id: { $ne: message._id },
-      });
-
-      const isFirstContact = priorCount === 0;
-      const senderUser = await User.findById(senderId).select(
-        "_id username email"
-      );
-
-      if (isFirstContact) {
-        io.to(String(recipientId)).emit("conversation:request", {
-          message,
-          sender: senderUser,
-        });
-      }
-
-      io.to(String(recipientId)).emit("conversation:updated", {
-        userId: String(senderId),
-        lastMessage: message,
-        isFirstContact,
-      });
-
-      io.to(String(senderId)).emit("conversation:updated", {
-        userId: String(recipientId),
-        lastMessage: message,
-      });
-    } catch (socketErr) {
-      console.error("Conversation socket notification failed:", socketErr);
-    }
+    await notifyNewMessage(senderId, recipientId, message);
 
     return res.status(201).json({
       message: "Message with attachment sent successfully",
@@ -578,7 +547,7 @@ const uploadAndSendMessage = async (req, res) => {
   }
 };
 
-// GET /api/messages/:messageId/attachment — authenticated download
+// GET /api/messages/:messageId/attachment — authenticated file download
 const downloadAttachment = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -629,7 +598,7 @@ const downloadAttachment = async (req, res) => {
   }
 };
 
-// GET /api/messages/:messageId/view — authenticated inline stream (e.g. for images)
+// GET /api/messages/:messageId/view — authenticated inline stream (e.g. for img tags)
 const viewAttachment = async (req, res) => {
   try {
     let token = null;
