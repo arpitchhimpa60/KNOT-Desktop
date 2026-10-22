@@ -269,7 +269,11 @@ function App() {
       return;
     }
 
-    const newSocket = io("http://localhost:5001", {
+    const socketUrl = (
+      import.meta.env.VITE_API_URL || "http://localhost:5001"
+    ).replace(/\/+$/, "");
+
+    const newSocket = io(socketUrl, {
       auth: { token },
     });
 

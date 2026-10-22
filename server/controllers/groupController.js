@@ -6,7 +6,9 @@ const Group = require("../models/Group");
 const GroupMessage = require("../models/GroupMessage");
 const User = require("../models/user");
 const { getIO } = require("../socket");
-const { UPLOADS_DIR } = require("../middleware/uploadMiddleware");
+const cloudinary = require("../config/cloudinary");
+const { uploadToCloudinary } = require("../utils/cloudinaryUpload");
+const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
 
 const USER_FIELDS = "_id username email";
 
@@ -35,7 +37,85 @@ function isAdmin(group, userId) {
   if (!group || !Array.isArray(group.admins)) return false;
   return group.admins.some((a) => String(a._id || a) === String(userId));
 }
+async function streamGroupAttachment(res, attachment, inline = false) {
+  const downloadName = attachment.originalName || "attachment";
 
+  if (attachment.storageProvider === "cloudinary" && attachment.publicId) {
+    const signedUrl = cloudinary.utils.private_download_url(
+      attachment.publicId,
+      attachment.format || "",
+      {
+        resource_type: attachment.resourceType || "raw",
+        type: "authenticated",
+        attachment: !inline,
+        expires_at: Math.floor(Date.now() / 1000) + 60,
+        secure: true,
+      }
+    );
+
+    const upstream = await fetch(signedUrl, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      console.error("Cloudinary attachment request failed:", upstream.status);
+      return res.status(502).json({
+        message: "Could not retrieve attachment from storage",
+      });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      attachment.mimeType || "application/octet-stream"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      inline
+        ? "inline"
+        : `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    const { Readable } = require("stream");
+    return Readable.fromWeb(upstream.body).pipe(res);
+  }
+
+  // Legacy local attachment fallback.
+  if (attachment.storageProvider === "local" || !attachment.storageProvider) {
+    const safeName = path.basename(attachment.fileName || "");
+    const uploadDirectory = path.resolve(UPLOADS_DIR);
+    const filePath = path.resolve(uploadDirectory, safeName);
+
+    if (
+      !safeName ||
+      !filePath.startsWith(`${uploadDirectory}${path.sep}`) ||
+      !fs.existsSync(filePath)
+    ) {
+      return res.status(404).json({
+        message: "File not found on server",
+      });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      attachment.mimeType || "application/octet-stream"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      inline
+        ? "inline"
+        : `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  return res.status(404).json({
+    message: "Attachment storage is unavailable",
+  });
+}
 // POST /api/groups — create a group
 const createGroup = async (req, res) => {
   try {
@@ -1205,11 +1285,17 @@ const uploadAndSendGroupMessage = async (req, res) => {
     };
 
     if (file) {
+      const uploadedFile = await uploadToCloudinary(file, "group-messages");
+
       messageData.attachment = {
         originalName: file.originalname,
-        fileName: file.filename,
-        fileSize: file.size,
+        fileName: uploadedFile.publicId,
+        fileSize: uploadedFile.bytes,
         mimeType: file.mimetype,
+        publicId: uploadedFile.publicId,
+        resourceType: uploadedFile.resourceType,
+        format: uploadedFile.format,
+        storageProvider: "cloudinary",
       };
     }
 
@@ -1254,11 +1340,17 @@ const downloadGroupAttachment = async (req, res) => {
     const userId = req.user.userId;
     const { groupId, messageId } = req.params;
 
-    if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ message: "Invalid group or message ID" });
+    if (
+      !mongoose.isValidObjectId(groupId) ||
+      !mongoose.isValidObjectId(messageId)
+    ) {
+      return res.status(400).json({
+        message: "Invalid group or message ID",
+      });
     }
 
     const group = await Group.findById(groupId);
+
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
@@ -1269,40 +1361,42 @@ const downloadGroupAttachment = async (req, res) => {
       });
     }
 
-    const message = await GroupMessage.findOne({ _id: messageId, group: groupId });
-    if (!message || !message.attachment || !message.attachment.fileName) {
-      return res.status(404).json({ message: "Attachment not found" });
+    const message = await GroupMessage.findOne({
+      _id: messageId,
+      group: groupId,
+    });
+
+    if (
+      !message ||
+      !message.attachment ||
+      !message.attachment.fileName
+    ) {
+      return res.status(404).json({
+        message: "Attachment not found",
+      });
     }
 
-    const safeName = path.basename(message.attachment.fileName);
-    const filePath = path.resolve(UPLOADS_DIR, safeName);
-
-    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found on server" });
-    }
-
-    const downloadName = message.attachment.originalName || safeName;
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${encodeURIComponent(downloadName)}"`
-    );
-    res.setHeader(
-      "Content-Type",
-      message.attachment.mimeType || "application/octet-stream"
-    );
-
-    return fs.createReadStream(filePath).pipe(res);
+    return await streamGroupAttachment(res, message.attachment, false);
   } catch (error) {
     console.error("Download group attachment error:", error);
-    return res.status(500).json({ message: "Could not download attachment" });
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Could not download attachment",
+      });
+    }
+
+    res.destroy(error);
   }
 };
 
-// GET /api/groups/:groupId/messages/:messageId/view — inline view (e.g. image preview)
+// GET /api/groups/:groupId/messages/:messageId/view
+// Inline viewing, e.g. image previews
 const viewGroupAttachment = async (req, res) => {
   try {
     let token = null;
     const authHeader = req.headers.authorization;
+
     if (authHeader && authHeader.startsWith("Bearer ")) {
       token = authHeader.split(" ")[1];
     } else if (req.query.token) {
@@ -1310,24 +1404,35 @@ const viewGroupAttachment = async (req, res) => {
     }
 
     if (!token) {
-      return res.status(401).json({ message: "Authentication required" });
+      return res.status(401).json({
+        message: "Authentication required",
+      });
     }
 
     let decoded;
+
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
-      return res.status(401).json({ message: "Invalid or expired token" });
+      return res.status(401).json({
+        message: "Invalid or expired token",
+      });
     }
 
     const userId = decoded.userId;
     const { groupId, messageId } = req.params;
 
-    if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ message: "Invalid group or message ID" });
+    if (
+      !mongoose.isValidObjectId(groupId) ||
+      !mongoose.isValidObjectId(messageId)
+    ) {
+      return res.status(400).json({
+        message: "Invalid group or message ID",
+      });
     }
 
     const group = await Group.findById(groupId);
+
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
@@ -1338,28 +1443,32 @@ const viewGroupAttachment = async (req, res) => {
       });
     }
 
-    const message = await GroupMessage.findOne({ _id: messageId, group: groupId });
-    if (!message || !message.attachment || !message.attachment.fileName) {
-      return res.status(404).json({ message: "Attachment not found" });
+    const message = await GroupMessage.findOne({
+      _id: messageId,
+      group: groupId,
+    });
+
+    if (
+      !message ||
+      !message.attachment ||
+      !message.attachment.fileName
+    ) {
+      return res.status(404).json({
+        message: "Attachment not found",
+      });
     }
 
-    const safeName = path.basename(message.attachment.fileName);
-    const filePath = path.resolve(UPLOADS_DIR, safeName);
-
-    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found on server" });
-    }
-
-    res.setHeader(
-      "Content-Type",
-      message.attachment.mimeType || "application/octet-stream"
-    );
-    res.setHeader("Content-Disposition", "inline");
-
-    return fs.createReadStream(filePath).pipe(res);
+    return await streamGroupAttachment(res, message.attachment, true);
   } catch (error) {
     console.error("View group attachment error:", error);
-    return res.status(500).json({ message: "Could not view attachment" });
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Could not view attachment",
+      });
+    }
+
+    res.destroy(error);
   }
 };
 

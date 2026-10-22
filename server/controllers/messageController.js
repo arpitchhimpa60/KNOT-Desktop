@@ -1,3 +1,5 @@
+const cloudinary = require("../config/cloudinary");
+const { uploadToCloudinary } = require("../utils/cloudinaryUpload");
 const path = require("path");
 const fs = require("fs");
 const jwt = require("jsonwebtoken");
@@ -5,8 +7,7 @@ const mongoose = require("mongoose");
 const User = require("../models/user");
 const Message = require("../models/Messages");
 const { getIO } = require("../socket");
-const { UPLOADS_DIR } = require("../middleware/uploadMiddleware");
-
+const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
 /**
  * Helper: Notify recipient and sender via Socket.IO after a new message is saved.
  * Also detects first contact to emit conversation request notifications.
@@ -523,11 +524,17 @@ const uploadAndSendMessage = async (req, res) => {
     }
 
     if (file) {
+      const uploadedFile = await uploadToCloudinary(file, "messages");
+
       messageData.attachment = {
         originalName: file.originalname,
-        fileName: file.filename,
-        fileSize: file.size,
+        fileName: uploadedFile.publicId,
+        fileSize: uploadedFile.bytes,
         mimeType: file.mimetype,
+        publicId: uploadedFile.publicId,
+        resourceType: uploadedFile.resourceType,
+        format: uploadedFile.format,
+        storageProvider: "cloudinary",
       };
     }
 
@@ -548,6 +555,7 @@ const uploadAndSendMessage = async (req, res) => {
 };
 
 // GET /api/messages/:messageId/attachment — authenticated file download
+
 const downloadAttachment = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -558,11 +566,12 @@ const downloadAttachment = async (req, res) => {
     }
 
     const message = await Message.findById(messageId);
+
     if (!message || !message.attachment || !message.attachment.fileName) {
       return res.status(404).json({ message: "Attachment not found" });
     }
 
-    // Security check: only conversation participants can download
+    // Only the sender and recipient can access this attachment.
     const isParticipant =
       String(message.sender) === String(userId) ||
       String(message.recipient) === String(userId);
@@ -573,36 +582,103 @@ const downloadAttachment = async (req, res) => {
       });
     }
 
-    // Path traversal safety
-    const safeName = path.basename(message.attachment.fileName);
-    const filePath = path.resolve(UPLOADS_DIR, safeName);
+    const attachment = message.attachment;
+    const downloadName = attachment.originalName || "attachment";
 
-    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found on server" });
+    // Cloudinary-backed attachment.
+    if (
+      attachment.storageProvider === "cloudinary" &&
+      attachment.publicId
+    ) {
+      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
+      const cloudinaryUrl = cloudinary.utils.private_download_url(
+        attachment.publicId,
+        attachment.format || "",
+        {
+          resource_type: attachment.resourceType || "raw",
+          type: "authenticated",
+          attachment: true,
+          expires_at: expiresAt,
+          secure: true,
+        }
+      );
+
+      const upstream = await fetch(cloudinaryUrl, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!upstream.ok || !upstream.body) {
+        console.error("Cloudinary download failed:", upstream.status);
+        return res.status(502).json({
+          message: "Could not retrieve attachment from storage",
+        });
+      }
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+      );
+      res.setHeader(
+        "Content-Type",
+        attachment.mimeType || "application/octet-stream"
+      );
+
+      const contentLength = upstream.headers.get("content-length");
+      if (contentLength) {
+        res.setHeader("Content-Length", contentLength);
+      }
+
+      const { Readable } = require("stream");
+      return Readable.fromWeb(upstream.body).pipe(res);
     }
 
-    const downloadName = message.attachment.originalName || safeName;
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${encodeURIComponent(downloadName)}"`
-    );
-    res.setHeader(
-      "Content-Type",
-      message.attachment.mimeType || "application/octet-stream"
-    );
+    // Legacy local attachment fallback.
+    if (attachment.storageProvider === "local" || !attachment.storageProvider) {
+      const safeName = path.basename(attachment.fileName);
+      const uploadDirectory = path.resolve(UPLOADS_DIR);
+      const filePath = path.resolve(uploadDirectory, safeName);
 
-    return fs.createReadStream(filePath).pipe(res);
+      if (
+        !filePath.startsWith(`${uploadDirectory}${path.sep}`) ||
+        !fs.existsSync(filePath)
+      ) {
+        return res.status(404).json({ message: "File not found on server" });
+      }
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+      );
+      res.setHeader(
+        "Content-Type",
+        attachment.mimeType || "application/octet-stream"
+      );
+
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    return res.status(404).json({ message: "Attachment storage is unavailable" });
   } catch (error) {
-    console.error("Download attachment error:", error);
+    console.error("Download attachment error:", error.message);
+
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return res.status(504).json({ message: "Attachment download timed out" });
+    }
+
     return res.status(500).json({ message: "Could not download attachment" });
   }
 };
 
+
 // GET /api/messages/:messageId/view — authenticated inline stream (e.g. for img tags)
+
 const viewAttachment = async (req, res) => {
   try {
     let token = null;
     const authHeader = req.headers.authorization;
+
     if (authHeader && authHeader.startsWith("Bearer ")) {
       token = authHeader.split(" ")[1];
     } else if (req.query.token) {
@@ -628,6 +704,7 @@ const viewAttachment = async (req, res) => {
     }
 
     const message = await Message.findById(messageId);
+
     if (!message || !message.attachment || !message.attachment.fileName) {
       return res.status(404).json({ message: "Attachment not found" });
     }
@@ -642,25 +719,85 @@ const viewAttachment = async (req, res) => {
       });
     }
 
-    const safeName = path.basename(message.attachment.fileName);
-    const filePath = path.resolve(UPLOADS_DIR, safeName);
+    const attachment = message.attachment;
 
-    if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found on server" });
+    // Cloudinary-backed attachment.
+    if (
+      attachment.storageProvider === "cloudinary" &&
+      attachment.publicId
+    ) {
+      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
+      const cloudinaryUrl = cloudinary.utils.private_download_url(
+        attachment.publicId,
+        attachment.format || "",
+        {
+          resource_type: attachment.resourceType || "raw",
+          type: "authenticated",
+          attachment: false,
+          expires_at: expiresAt,
+          secure: true,
+        }
+      );
+
+      const upstream = await fetch(cloudinaryUrl, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!upstream.ok || !upstream.body) {
+        console.error("Cloudinary preview failed:", upstream.status);
+        return res.status(502).json({
+          message: "Could not retrieve attachment from storage",
+        });
+      }
+
+      res.setHeader(
+        "Content-Type",
+        attachment.mimeType || "application/octet-stream"
+      );
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      const { Readable } = require("stream");
+      return Readable.fromWeb(upstream.body).pipe(res);
     }
 
-    res.setHeader(
-      "Content-Type",
-      message.attachment.mimeType || "application/octet-stream"
-    );
-    res.setHeader("Content-Disposition", "inline");
+    // Legacy local attachment fallback.
+    if (attachment.storageProvider === "local" || !attachment.storageProvider) {
+      const safeName = path.basename(attachment.fileName);
+      const uploadDirectory = path.resolve(UPLOADS_DIR);
+      const filePath = path.resolve(uploadDirectory, safeName);
 
-    return fs.createReadStream(filePath).pipe(res);
+      if (
+        !filePath.startsWith(`${uploadDirectory}${path.sep}`) ||
+        !fs.existsSync(filePath)
+      ) {
+        return res.status(404).json({ message: "File not found on server" });
+      }
+
+      res.setHeader(
+        "Content-Type",
+        attachment.mimeType || "application/octet-stream"
+      );
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    return res.status(404).json({ message: "Attachment storage is unavailable" });
   } catch (error) {
-    console.error("View attachment error:", error);
+    console.error("View attachment error:", error.message);
+
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return res.status(504).json({ message: "Attachment preview timed out" });
+    }
+
     return res.status(500).json({ message: "Could not view attachment" });
   }
 };
+
 
 module.exports = {
   sendMessage,

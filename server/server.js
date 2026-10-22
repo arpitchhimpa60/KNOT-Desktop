@@ -1,3 +1,4 @@
+
 const http = require("http");
 const path = require("path");
 const express = require("express");
@@ -15,33 +16,41 @@ const groupRoutes = require("./routes/groupRoutes");
 const { initSocket } = require("./socket");
 
 const app = express();
+const server = http.createServer(app);
 
-// Standard middleware
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Connect to MongoDB
-connectDB();
-
-// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/groups", groupRoutes);
 
-// Health check endpoint
 app.get("/", (req, res) => {
   res.json({ message: "KNOT server is running" });
 });
 
-const PORT = process.env.PORT || 5000;
-const server = http.createServer(app);
+app.get("/healthz", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 
-// Initialize Socket.IO real-time server
 initSocket(server);
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`KNOT server running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 5000;
+
+async function startServer() {
+  try {
+    await connectDB();
+
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`KNOT server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to start KNOT server:", error.message);
+    process.exit(1);
+  }
+}
+
+startServer();

@@ -26,6 +26,16 @@ const messageSchema = new mongoose.Schema(
       fileName: { type: String, default: null },
       fileSize: { type: Number, default: 0 },
       mimeType: { type: String, default: null },
+
+      // Cloudinary storage metadata
+      publicId: { type: String, default: null },
+      resourceType: { type: String, default: null },
+      format: { type: String, default: null },
+      storageProvider: {
+        type: String,
+        enum: ["local", "cloudinary", null],
+        default: "local",
+      },
     },
 
     status: {
