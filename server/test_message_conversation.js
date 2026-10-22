@@ -1,8 +1,11 @@
 const ioClient = require("../client/node_modules/socket.io-client");
 const fs = require("fs");
 const path = require("path");
+const mongoose = require("mongoose");
+const Message = require("./models/Messages");
 
 const BASE_URL = "http://localhost:5001";
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/knot";
 
 async function postJSON(url, body, token) {
   const headers = { "Content-Type": "application/json" };
@@ -77,6 +80,14 @@ function assert(condition, message) {
 
 async function runTests() {
   console.log("=== STARTING MESSAGE & CONVERSATION CONTROLLER TESTS ===");
+  let socketA = null;
+  let socketB = null;
+  let testError = null;
+
+  try {
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect(MONGO_URI);
+  }
   const ts = Date.now();
 
   // 1. Setup Users: User A (Alice), User B (Bob), User C (Charlie)
@@ -108,8 +119,8 @@ async function runTests() {
   assert(tokenA && tokenB && tokenC, "All 3 test users created with tokens");
 
   // Connect sockets for Alice and Bob
-  const socketA = createSocket(tokenA);
-  const socketB = createSocket(tokenB);
+  socketA = createSocket(tokenA);
+  socketB = createSocket(tokenB);
   await sleep(400);
 
   // 2. Direct message sending & First Contact / Request detection
@@ -229,6 +240,52 @@ async function runTests() {
   await sleep(300);
   assert(aReceivedReadNotice && aReceivedReadNotice.messageIds.includes(String(msg3._id)), "Alice received messages-read socket notification");
 
+  // 7.B. Regression: Legacy message without status field
+  console.log("\n7.B. Testing Regression for Legacy Message without Status Field...");
+  const legacyDoc = {
+    sender: new mongoose.Types.ObjectId(userA.id),
+    recipient: new mongoose.Types.ObjectId(userB.id),
+    text: "Legacy message without status field",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deleted: false,
+    isEdited: false,
+  };
+  const unrelatedDoc = {
+    sender: new mongoose.Types.ObjectId(userA.id),
+    recipient: new mongoose.Types.ObjectId(userB.id),
+    text: "Unrelated legacy message that should remain unread",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deleted: false,
+    isEdited: false,
+  };
+
+  const insertLegacyResult = await Message.collection.insertOne(legacyDoc);
+  const insertUnrelatedResult = await Message.collection.insertOne(unrelatedDoc);
+  const legacyMsgId = insertLegacyResult.insertedId;
+  const unrelatedMsgId = insertUnrelatedResult.insertedId;
+
+  try {
+    const rawLegacyBefore = await Message.collection.findOne({ _id: legacyMsgId });
+    assert(rawLegacyBefore && rawLegacyBefore.status === undefined, "Legacy message created with no status field");
+
+    const readLegacyRes = await patchJSON("/api/messages/read", {
+      senderId: userA.id,
+      messageIds: [legacyMsgId],
+    }, tokenB);
+    assert(readLegacyRes.status === 200, "Mark legacy message read returns 200");
+    assert(readLegacyRes.data.modifiedCount === 1, "Legacy message updated to read status (modifiedCount is 1)");
+
+    const rawLegacyAfter = await Message.collection.findOne({ _id: legacyMsgId });
+    assert(rawLegacyAfter && rawLegacyAfter.status === "read", "Persisted legacy message status became 'read'");
+
+    const rawUnrelatedAfter = await Message.collection.findOne({ _id: unrelatedMsgId });
+    assert(rawUnrelatedAfter && rawUnrelatedAfter.status !== "read", "Unrelated message was not modified to read status");
+  } finally {
+    await Message.collection.deleteMany({ _id: { $in: [legacyMsgId, unrelatedMsgId] } });
+  }
+
   // 8. Edit and Delete Message
   console.log("\n8. Testing Edit and Delete Message...");
   let bReceivedEdit = null;
@@ -327,15 +384,55 @@ async function runTests() {
   const aRequestsAfter = await getJSON("/api/conversations/requests", tokenA);
   assert(!aRequestsAfter.data.requests.some((r) => String(r.user._id) === String(userC.id)), "Charlie is cleared from Alice's requests");
 
-  // Cleanup sockets
-  socketA.disconnect();
-  socketB.disconnect();
-
   console.log(`\n========================================`);
   console.log(`ALL MESSAGE & CONVERSATION TESTS PASSED!`);
   console.log(`Passed: ${passedCount}`);
   console.log(`Failed: ${failedCount}`);
   console.log(`========================================`);
+  } catch (err) {
+    testError = err;
+    throw err;
+  } finally {
+    const cleanupErrors = [];
+
+    if (socketA) {
+      try {
+        socketA.disconnect();
+      } catch (err) {
+        cleanupErrors.push(err);
+        console.error("Cleanup error disconnecting socketA:", err);
+      }
+    }
+
+    if (socketB) {
+      try {
+        socketB.disconnect();
+      } catch (err) {
+        cleanupErrors.push(err);
+        console.error("Cleanup error disconnecting socketB:", err);
+      }
+    }
+
+    if (mongoose.connection.readyState !== 0) {
+      try {
+        await mongoose.disconnect();
+      } catch (err) {
+        cleanupErrors.push(err);
+        console.error("Cleanup error disconnecting Mongoose:", err);
+      }
+    }
+
+    if (testError) {
+      if (cleanupErrors.length > 0) {
+        testError.cleanupErrors = cleanupErrors;
+      }
+    } else if (cleanupErrors.length > 0) {
+      if (cleanupErrors.length === 1) {
+        throw cleanupErrors[0];
+      }
+      throw new AggregateError(cleanupErrors, "Multiple cleanup errors occurred");
+    }
+  }
 }
 
 runTests().catch((err) => {

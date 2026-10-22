@@ -26,6 +26,11 @@ function App() {
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const selectedUserRef = useRef(selectedUser);
+
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
 
   const [groups, setGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -148,8 +153,23 @@ function App() {
 
     try {
       const data = await fetchConversations(token);
-      setConversations(data.conversations || []);
-      setConversationRequests(data.requests || []);
+      const activeUserId = selectedUserRef.current?._id
+        ? String(selectedUserRef.current._id)
+        : null;
+
+      const updatedConversations = (data.conversations || []).map((c) =>
+        activeUserId && String(c.user?._id) === activeUserId
+          ? { ...c, unreadCount: 0 }
+          : c
+      );
+      const updatedRequests = (data.requests || []).map((r) =>
+        activeUserId && String(r.user?._id) === activeUserId
+          ? { ...r, unreadCount: 0 }
+          : r
+      );
+
+      setConversations(updatedConversations);
+      setConversationRequests(updatedRequests);
 
       // If user logs in and has pending requests, show toast notification once
       if (
@@ -299,11 +319,19 @@ function App() {
 
     function handleConversationRead(payload) {
       if (payload?.userId) {
+        const targetId = String(payload.userId);
         setConversations((previous) =>
           previous.map((c) =>
-            String(c.user?._id) === String(payload.userId)
+            String(c.user?._id) === targetId
               ? { ...c, unreadCount: 0 }
               : c
+          )
+        );
+        setConversationRequests((previous) =>
+          previous.map((r) =>
+            String(r.user?._id) === targetId
+              ? { ...r, unreadCount: 0 }
+              : r
           )
         );
       }
@@ -522,8 +550,23 @@ function App() {
   }
 
   function handleSelectUser(user) {
+    selectedUserRef.current = user;
     setSelectedUser(user);
     setSelectedGroup(null);
+
+    if (user?._id) {
+      const targetId = String(user._id);
+      setConversations((previous) =>
+        previous.map((c) =>
+          String(c.user?._id) === targetId ? { ...c, unreadCount: 0 } : c
+        )
+      );
+      setConversationRequests((previous) =>
+        previous.map((r) =>
+          String(r.user?._id) === targetId ? { ...r, unreadCount: 0 } : r
+        )
+      );
+    }
 
     if (String(activeToastNotification?.user?._id) === String(user?._id)) {
       setActiveToastNotification(null);
@@ -531,6 +574,7 @@ function App() {
   }
 
   function handleSelectGroup(group) {
+    selectedUserRef.current = null;
     setSelectedGroup(group);
     setSelectedUser(null);
   }

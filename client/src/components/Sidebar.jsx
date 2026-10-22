@@ -515,11 +515,13 @@ function Sidebar({
                               <span className="conversation-preview-text request-preview">
                                 {getRequestPreviewText(req)}
                               </span>
-                              {req.unreadCount > 0 && (
-                                <span className="unread-count-pill request-pill">
-                                  {req.unreadCount}
-                                </span>
-                              )}
+                              {req.unreadCount > 0 &&
+                                String(selectedUser?._id) !==
+                                  String(req.user?._id) && (
+                                  <span className="unread-count-pill request-pill">
+                                    {req.unreadCount}
+                                  </span>
+                                )}
                             </div>
                           </div>
                         </button>
@@ -654,11 +656,13 @@ function Sidebar({
                               </span>
                             </span>
 
-                            {conv.unreadCount > 0 && (
-                              <span className="unread-count-pill">
-                                {conv.unreadCount}
-                              </span>
-                            )}
+                            {conv.unreadCount > 0 &&
+                              String(selectedUser?._id) !==
+                                String(conv.user?._id) && (
+                                <span className="unread-count-pill">
+                                  {conv.unreadCount}
+                                </span>
+                              )}
                           </div>
                         </div>
                       </button>

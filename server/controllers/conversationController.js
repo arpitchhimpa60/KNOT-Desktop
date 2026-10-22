@@ -205,7 +205,7 @@ const acceptConversation = async (req, res) => {
     const unreadMessages = await Message.find({
       sender: otherUserId,
       recipient: myId,
-      status: { $in: ["sent", "delivered"] },
+      status: { $ne: "read" },
     }).select("_id");
 
     const messageIds = unreadMessages.map((m) => m._id);
@@ -262,7 +262,7 @@ const declineConversation = async (req, res) => {
       {
         sender: otherUserId,
         recipient: myId,
-        status: { $in: ["sent", "delivered"] },
+        status: { $ne: "read" },
       },
       {
         $set: { status: "read" },

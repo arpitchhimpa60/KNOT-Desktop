@@ -293,7 +293,7 @@ const markMessagesRead = async (req, res) => {
         _id: { $in: messageIds },
         sender: senderId,
         recipient: recipientId,
-        status: { $in: ["sent", "delivered"] },
+        status: { $ne: "read" },
       },
       {
         $set: { status: "read" },
