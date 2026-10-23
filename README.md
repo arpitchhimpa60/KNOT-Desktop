@@ -8,6 +8,16 @@ The goal of KNOT is to build a focused messaging application while understanding
 
 ---
 
+## 🌐 Try KNOT in Your Browser
+
+You can use KNOT directly in your browser without installing the desktop application.
+
+**[Open KNOT Web App](https://knot-frontend-zk1v.onrender.com/)**
+
+- No desktop installation required
+- Access KNOT through your web browser
+- Sign up or log in to start chatting
+
 ## Download KNOT Desktop
 
 Download the latest macOS build of KNOT here:
