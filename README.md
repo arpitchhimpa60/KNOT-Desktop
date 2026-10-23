@@ -107,31 +107,61 @@ Messages will have three basic states:
 
 ---
 
-## Basic Architecture
+## 🏗️ Architecture
 
 ```text
-┌──────────────────────────────┐
-│       KNOT Desktop App       │
-│                              │
-│       Electron + React       │
-└──────────────┬───────────────┘
-               │
-        HTTP / Socket.IO
-               │
-               ▼
-┌──────────────────────────────┐
-│        Backend Server        │
-│                              │
-│       Node.js + Express      │
-│          + Socket.IO         │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│           MongoDB            │
-│                              │
-│ Users                        │
-│ Conversations                │
-│ Messages                     │
-│ Groups                       │
-└──────────────────────────────┘
+                 KNOT APPLICATION
+                         │
+             ┌───────────┴───────────┐
+             │                       │
+             ▼                       ▼
+   ┌──────────────────┐   ┌──────────────────┐
+   │   KNOT Web App   │   │ KNOT Desktop App │
+   │                  │   │                  │
+   │      React       │   │ Electron + React │
+   │   Browser-based  │   │   macOS (.dmg)   │
+   └────────┬─────────┘   └────────┬─────────┘
+            │                      │
+            └──────────┬───────────┘
+                       │
+             HTTP REST API / Socket.IO
+                       │
+                       ▼
+           ┌─────────────────────────┐
+           │    Hosted Backend       │
+           │                         │
+           │      Node.js            │
+           │      Express.js         │
+           │      Socket.IO           │
+           │                         │
+           │ Authentication (JWT)    │
+           │ API Routes & Controllers│
+           └────────────┬────────────┘
+                        │
+                        ▼
+              ┌───────────────────┐
+              │   MongoDB Atlas   │
+              │                   │
+              │ Users             │
+              │ Conversations     │
+              │ Messages          │
+              │ Groups            │
+              │ Group Messages    │
+              └───────────────────┘
+```
+
+### Architecture Overview
+
+- **Web Frontend:** React application accessible through a web browser.
+- **Desktop Frontend:** Electron wraps the React interface into a macOS desktop application.
+- **Backend:** Node.js and Express handle authentication, API requests, and application logic.
+- **Real-Time Communication:** Socket.IO supports real-time messaging and communication events.
+- **Authentication:** JSON Web Tokens (JWT) are used for authentication.
+- **Database:** MongoDB Atlas stores user accounts, conversations, messages, groups, and group messages.
+- **Deployment:** The web frontend is hosted on Render, and the backend API is hosted on Render. The desktop application is distributed as a macOS DMG installer.
+
+### Application Links
+
+- **Web App:** https://knot-frontend-zk1v.onrender.com/
+- **Desktop Download:** [Download KNOT for macOS](https://drive.google.com/file/d/1NqRakHd4fML2tPL-kjUjQgsqbZ51oSKP/view?usp=sharing)
+- **Backend Health Check:** https://knot-desktop.onrender.com/healthz
