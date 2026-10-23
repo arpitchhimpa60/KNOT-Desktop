@@ -8,6 +8,23 @@ The goal of KNOT is to build a focused messaging application while understanding
 
 ---
 
+## Download KNOT Desktop
+
+Download the latest macOS build of KNOT here:
+
+**[Download KNOT for macOS (Apple Silicon)](https://drive.google.com/file/d/1NqRakHd4fML2tPL-kjUiQGsqbZ51oSKP/view?usp=sharing)**
+
+### Installation
+
+1. Download the `.dmg` file.
+2. Open the DMG and install or copy KNOT to Applications, if offered.
+3. Launch KNOT.
+
+**Compatibility:** This build is for Apple Silicon Macs (M1, M2, M3, M4, and later).
+
+**Note:** This is an unsigned test build. macOS may block it from opening because it has not been signed and notarized by Apple.
+
+
 ## Features
 
 KNOT will initially focus on these 8 core features:
